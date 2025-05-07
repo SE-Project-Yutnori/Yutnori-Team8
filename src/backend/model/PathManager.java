@@ -71,7 +71,7 @@ public class PathManager {
                 for (int i = 0; i < steps; i++) {
                     idx++;
                     if (idx < DIAG_A_TO_B.size()) {
-                        Position targetPos = DIAG_A_TO_B.get(idx);
+                        Position targetPos = DIAG_A_TO_B.get(iㅁdx);
                         path.add(targetPos);
                         if (targetPos == Position.POS_0 && DIAG_A_TO_B.get(DIAG_A_TO_B.size()-1) == Position.POS_0) { // DIAG_A_TO_B 경로의 끝이 POS_0(도착)이면
                             path.remove(path.size()-1); // 마지막 POS_0 제거
