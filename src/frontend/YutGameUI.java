@@ -1,207 +1,286 @@
+// File: src/frontend/YutGameUI.java
 package frontend;
 
-import backend.game.Game;
+import backend.controller.GameController;
+import backend.game.Game; // 타입 힌트 등에 필요할 수 있음
 import backend.game.YutThrowResult;
-import backend.game.YutThrower;
-import backend.model.PathManager;
+// import backend.game.YutThrower; // UI는 더 이상 YutThrower를 직접 호출하지 않음
 import backend.model.Piece;
 import backend.model.Player;
-import backend.model.Position;
+import backend.model.Position; // 필요한 경우 말 위치 표시에 사용
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.SwingUtilities;
-
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.util.ArrayList;
-import java.util.List;
+import javax.swing.*;
+import java.awt.*;
+import java.util.ArrayList; // For promptForThrowSelection
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class YutGameUI extends JFrame {
-    private Game game;
+    private GameController controller; // 컨트롤러를 보유
+    private Game gameModel; // 선택 사항: 읽기 전용 표시 요구에 대한 직접 참조 (BoardPanel 등에 전달)
+
     private JLabel statusLabel;
     private JTextArea logArea, indicatorArea;
     private BoardPanel boardPanel;
+    private JButton randomThrowButton, designatedThrowButton;
 
     public static void launch() {
-        SwingUtilities.invokeLater(() -> new YutGameUI().setVisible(true));
+        SwingUtilities.invokeLater(() -> {
+            YutGameUI ui = new YutGameUI();
+            GameController controller = new GameController(ui); // UI 참조를 컨트롤러에 전달
+            ui.setController(controller); // 컨트롤러 참조를 UI에 전달
+            ui.setVisible(true);
+            ui.promptForGameSetup(); // 게임 설정 시작
+        });
     }
 
     public YutGameUI() {
-        super("전통 윷놀이");
+        super("전통 윷놀이 (MVC 리팩터링)");
         setSize(1000, 800);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        statusLabel = new JLabel();
+        statusLabel = new JLabel("게임 설정을 시작하세요.", SwingConstants.CENTER);
+        statusLabel.setBorder(BorderFactory.createEmptyBorder(10,0,10,0));
         add(statusLabel, BorderLayout.NORTH);
 
-        boardPanel = new BoardPanel(null);
+        // BoardPanel은 게임 설정 후 초기화됨
+        boardPanel = new BoardPanel(null); // null 또는 더미 보드로 초기화
         add(boardPanel, BorderLayout.CENTER);
 
         indicatorArea = new JTextArea(10, 20);
         indicatorArea.setEditable(false);
-        indicatorArea.setBorder(BorderFactory.createTitledBorder("미시작 말"));
+        indicatorArea.setBorder(BorderFactory.createTitledBorder("미시작/완료 말"));
         add(new JScrollPane(indicatorArea), BorderLayout.EAST);
 
-        JPanel bottom = new JPanel(new BorderLayout());
-        logArea = new JTextArea(5, 40);
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+        logArea = new JTextArea(8, 40);
         logArea.setEditable(false);
-        bottom.add(new JScrollPane(logArea), BorderLayout.CENTER);
+        logArea.setBorder(BorderFactory.createEtchedBorder());
+        bottomPanel.add(new JScrollPane(logArea), BorderLayout.CENTER);
 
-        JPanel btnPanel = new JPanel();
-        JButton randomBtn = new JButton("랜덤 윷 던지기");
-        randomBtn.addActionListener(e -> handleThrow());
-        btnPanel.add(randomBtn);
+        JPanel buttonControlPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        randomThrowButton = new JButton("랜덤 윷 던지기");
+        randomThrowButton.setEnabled(false); // 게임 시작 전까지 비활성화
+        randomThrowButton.addActionListener(e -> {
+            if (controller != null) controller.handleThrowRequest(true);
+        });
+        buttonControlPanel.add(randomThrowButton);
 
-        JButton designatedBtn = new JButton("지정 윷 던지기");
-        designatedBtn.addActionListener(e -> handleDesignatedThrow());
-        btnPanel.add(designatedBtn);
+        designatedThrowButton = new JButton("지정 윷 던지기");
+        designatedThrowButton.setEnabled(false); // 게임 시작 전까지 비활성화
+        designatedThrowButton.addActionListener(e -> {
+            if (controller != null) controller.handleThrowRequest(false);
+        });
+        buttonControlPanel.add(designatedThrowButton);
 
-        bottom.add(btnPanel, BorderLayout.EAST);
-        add(bottom, BorderLayout.SOUTH);
-
-        initGame();
+        bottomPanel.add(buttonControlPanel, BorderLayout.SOUTH);
+        add(bottomPanel, BorderLayout.SOUTH);
     }
 
-    private void initGame() {
-        int pc = prompt("참가자 수 (2~4명)", 2, 4);
-        int mc = prompt("말 수 (2~5개)", 2, 5);
-        game = new Game(pc, mc);
+    public void setController(GameController controller) {
+        this.controller = controller;
+    }
 
-        remove(boardPanel);
-        boardPanel = new BoardPanel(game.getBoard());
-        add(boardPanel, BorderLayout.CENTER);
-
-        statusLabel.setText(game.getCurrentPlayer().getName() + " 차례입니다.");
-        logArea.setText("게임을 시작합니다.\n");
-        updateIndicator();
-
+    public void setGameModel(Game gameModel) {
+        this.gameModel = gameModel; // gameModel 참조 저장
+        if (this.boardPanel != null) {
+            remove(this.boardPanel); // 이전 것이 있으면 제거
+        }
+        if (gameModel != null && gameModel.getBoard() != null) {
+            this.boardPanel = new BoardPanel(gameModel.getBoard()); // 게임 모델로 새 보드 패널 생성
+            add(this.boardPanel, BorderLayout.CENTER);
+        } else {
+            // gameModel 또는 gameModel.getBoard()가 null인 경우 처리 (예: 빈 패널 표시)
+            this.boardPanel = new BoardPanel(null); // 혹은 다른 기본값
+            add(this.boardPanel, BorderLayout.CENTER);
+        }
         revalidate();
         repaint();
     }
 
-    private int prompt(String msg, int min, int max) {
-        while (true) {
-            String s = JOptionPane.showInputDialog(this, msg);
-            if (s == null) System.exit(0);
-            try {
-                int v = Integer.parseInt(s);
-                if (v >= min && v <= max) return v;
-            } catch (NumberFormatException ignored) {}
+    public void promptForGameSetup() {
+        int playerCount = promptForInt("참가자 수 (2~4명):", 2, 4);
+        if (playerCount == -1) { // 사용자가 취소함
+            System.exit(0);
+            return;
         }
-    }
-
-    private void handleThrow() {
-        processThrow(YutThrower.throwRandom());
-    }
-
-    private void handleDesignatedThrow() {
-        YutThrowResult[] opts = YutThrowResult.values();
-        String[] labels = Arrays.stream(opts).map(Enum::name).toArray(String[]::new);
-        String sel = (String) JOptionPane.showInputDialog(
-                this, "지정할 윷 결과를 선택하세요", "지정 윷 던지기",
-                JOptionPane.PLAIN_MESSAGE, null, labels, labels[0]
-        );
-        if (sel == null) return;
-        processThrow(YutThrowResult.valueOf(sel));
-    }
-
-    private void processThrow(YutThrowResult res) {
-        Player player = game.getCurrentPlayer();
-        logArea.append(player.getName() + " → " + res.name() + "\n");
-
-        // 이동 가능한 말 선택
-        List<Piece> movable = new ArrayList<>();
-        for (Piece p : player.getPieces()) {
-            if (!p.isFinished()) movable.add(p);
-        }
-        if (movable.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "이동할 말이 없습니다.");
+        int pieceCount = promptForInt("말 수 (2~5개):", 2, 5);
+        if (pieceCount == -1) { // 사용자가 취소함
+            System.exit(0);
             return;
         }
 
-        Piece sel = (movable.size() == 1) ? movable.get(0) : choosePiece(movable);
-        if (sel == null) return;
-
-        Position cur = sel.getPosition();
-        // 이제 무조건 하나의 메서드로 경로 계산
-        List<Position> path = PathManager.getNextPositions(cur, res.getMove());
-
-        // 업기 그룹 설정
-        List<Piece> group = new ArrayList<>();
-        if (cur == Position.OFFBOARD) {
-            group.add(sel);
-        } else {
-            for (Piece p : game.getBoard().getPiecesAt(cur)) {
-                if (p.getOwner() == player) group.add(p);
-            }
+        if (controller != null) {
+            controller.initializeGame(playerCount, pieceCount);
+            randomThrowButton.setEnabled(true); // 게임 시작 시 버튼 활성화
+            designatedThrowButton.setEnabled(true);
         }
+    }
 
-        // 이동 & 잡기
-        boolean captured = false;
-        if (!path.isEmpty()) {
-            Position dest = path.get(path.size() - 1);
-            for (Piece p : group) {
-                if (game.getBoard().placePiece(p, dest)) {
-                    captured = true;
+    private int promptForInt(String message, int min, int max) {
+        String input;
+        int value;
+        while (true) {
+            input = JOptionPane.showInputDialog(this, message, min + "~" + max);
+            if (input == null) return -1; // 사용자가 취소함
+            try {
+                value = Integer.parseInt(input);
+                if (value >= min && value <= max) {
+                    return value;
+                } else {
+                    JOptionPane.showMessageDialog(this, "입력 범위는 " + min + "에서 " + max + " 사이입니다.", "입력 오류", JOptionPane.ERROR_MESSAGE);
                 }
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, "숫자를 입력해주세요.", "입력 오류", JOptionPane.ERROR_MESSAGE);
             }
-            logArea.append(" → " + dest.name() +
-                    " (" + group.size() + "개)\n");
+        }
+    }
+
+    public YutThrowResult promptForDesignatedThrow() {
+        YutThrowResult[] options = YutThrowResult.values();
+        String[] labels = Arrays.stream(options).map(Enum::name).toArray(String[]::new);
+        String selected = (String) JOptionPane.showInputDialog(
+                this, "지정할 윷 결과를 선택하세요:", "지정 윷 던지기",
+                JOptionPane.QUESTION_MESSAGE, null, labels, labels[0]);
+        if (selected == null) return null; // 사용자가 취소함
+        try {
+            return YutThrowResult.fromString(selected);
+        } catch (IllegalArgumentException e) {
+            showError("잘못된 윷 결과입니다: " + selected);
+            return null;
+        }
+    }
+
+    public Piece promptForPieceSelection(List<Piece> movablePieces, String message) {
+        if (movablePieces == null || movablePieces.isEmpty()) return null;
+
+        String[] options = new String[movablePieces.size()];
+        for (int i = 0; i < movablePieces.size(); i++) {
+            Piece p = movablePieces.get(i);
+            String positionInfo = (p.getPosition() == Position.OFFBOARD) ? "출발하지 않은 말" : p.getPosition().name();
+            options[i] = String.format("%d번 말 (현재 위치: %s, %s 소유)", i + 1, positionInfo, p.getOwner().getName());
         }
 
-        boardPanel.repaint();
-        updateIndicator();
+        String selectedOption = (String) JOptionPane.showInputDialog(
+                this, message, "말 선택",
+                JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
 
-        // 승리 체크
-        if (game.checkWin(player)) {
-            JOptionPane.showMessageDialog(this, player.getName() + " 승리!");
-            System.exit(0);
+        if (selectedOption == null) return null; // 사용자가 취소함
+
+        for (int i = 0; i < options.length; i++) {
+            if (options[i].equals(selectedOption)) {
+                return movablePieces.get(i);
+            }
         }
+        return null; // 이론상 발생 안 함
+    }
 
-        // 추가 턴: 윷·모·잡기 시
-        if (res == YutThrowResult.YUT ||
-                res == YutThrowResult.MO  ||
-                captured) {
-            logArea.append("추가 던지기 기회!\n");
+    public YutThrowResult promptForThrowSelection(List<YutThrowResult> availableThrows) {
+        if (availableThrows == null || availableThrows.isEmpty()) return null;
+
+        String[] options = availableThrows.stream().map(Enum::name).toArray(String[]::new);
+        String message = "어떤 윷 결과를 사용하시겠습니까?\n사용 가능한 결과: " +
+                availableThrows.stream().map(Enum::name).collect(Collectors.joining(", "));
+
+        String selectedOption = (String) JOptionPane.showInputDialog(
+                this, message, "윷 결과 선택",
+                JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+
+        if (selectedOption == null) return null; // 사용자가 취소함
+        try {
+            return YutThrowResult.fromString(selectedOption);
+        } catch (IllegalArgumentException e) {
+            showError("잘못된 윷 결과입니다: " + selectedOption);
+            return null;
+        }
+    }
+
+
+    public void logMessage(String message) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            logArea.append(message + "\n");
+            logArea.setCaretPosition(logArea.getDocument().getLength()); // 자동 스크롤
         } else {
-            game.nextTurn();
-            statusLabel.setText(
-                    game.getCurrentPlayer().getName() + " 차례입니다."
-            );
+            SwingUtilities.invokeLater(() -> {
+                logArea.append(message + "\n");
+                logArea.setCaretPosition(logArea.getDocument().getLength());
+            });
         }
     }
 
-    private Piece choosePiece(List<Piece> mv) {
-        String[] opts = new String[mv.size()];
-        for (int i = 0; i < mv.size(); i++) {
-            opts[i] = String.format("%d번 말 (%s)", i+1, mv.get(i).getPosition());
+    public void updateStatusLabel(String text) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            statusLabel.setText(text);
+        } else {
+            SwingUtilities.invokeLater(() -> statusLabel.setText(text));
         }
-        String sel = (String) JOptionPane.showInputDialog(
-                this, "이동할 말을 선택하세요", "말 선택",
-                JOptionPane.PLAIN_MESSAGE, null, opts, opts[0]
-        );
-        if (sel == null) return null;
-        return mv.get(Integer.parseInt(sel.split("번")[0]) - 1);
     }
 
-    private void updateIndicator() {
+    public void refreshBoard() {
+        if (SwingUtilities.isEventDispatchThread()) {
+            if (boardPanel != null) {
+                boardPanel.repaint();
+            }
+        } else {
+            SwingUtilities.invokeLater(() -> {
+                if (boardPanel != null) {
+                    boardPanel.repaint();
+                }
+            });
+        }
+    }
+
+    public void updateIndicators() {
+        if (SwingUtilities.isEventDispatchThread()) {
+            updateIndicatorsLogic();
+        } else {
+            SwingUtilities.invokeLater(this::updateIndicatorsLogic);
+        }
+    }
+
+    private void updateIndicatorsLogic() {
+        if (gameModel == null || gameModel.getPlayers() == null) return;
         StringBuilder sb = new StringBuilder();
-        for (Player p : game.getPlayers()) {
-            long off = p.getPieces().stream()
-                    .filter(x -> x.getPosition() == Position.OFFBOARD)
-                    .count();
-            sb.append(p.getName()).append(": ").append(off).append("개\n");
+        for (Player p : gameModel.getPlayers()) {
+            if (p != null && p.getPieces() != null) {
+                long offBoardCount = p.getPieces().stream().filter(pc -> pc != null && pc.getPosition() == Position.OFFBOARD).count();
+                long finishedCount = p.getPieces().stream().filter(pc -> pc != null && pc.isFinished()).count();
+                sb.append(String.format("%s: 대기 %d, 완료 %d\n", p.getName(), offBoardCount, finishedCount));
+            }
         }
         indicatorArea.setText(sb.toString());
+    }
+
+    public void showInfo(String message) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            JOptionPane.showMessageDialog(this, message, "알림", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, message, "알림", JOptionPane.INFORMATION_MESSAGE));
+        }
+    }
+
+    public void showError(String message) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            JOptionPane.showMessageDialog(this, message, "오류", JOptionPane.ERROR_MESSAGE);
+        } else {
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, message, "오류", JOptionPane.ERROR_MESSAGE));
+        }
+    }
+
+    public void showWinMessage(String winnerName) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            JOptionPane.showMessageDialog(this, winnerName + "님이 승리했습니다! 축하합니다!", "게임 종료", JOptionPane.INFORMATION_MESSAGE);
+            randomThrowButton.setEnabled(false);
+            designatedThrowButton.setEnabled(false);
+        } else {
+            SwingUtilities.invokeLater(() -> {
+                JOptionPane.showMessageDialog(this, winnerName + "님이 승리했습니다! 축하합니다!", "게임 종료", JOptionPane.INFORMATION_MESSAGE);
+                randomThrowButton.setEnabled(false);
+                designatedThrowButton.setEnabled(false);
+            });
+        }
     }
 }
