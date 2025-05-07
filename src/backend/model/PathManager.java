@@ -6,6 +6,7 @@ import java.util.List;
 
 public class PathManager {
 
+    // 상수 선언 (OUTER, DIAG_A_FULL, DIAG_B_FULL, DIAG_A_TO_B)은 이전과 동일
     private static final List<Position> OUTER = List.of(
             Position.POS_0,  Position.POS_1,  Position.POS_2,  Position.POS_3,  Position.POS_4,
             Position.POS_5,  Position.POS_6,  Position.POS_7,  Position.POS_8,  Position.POS_9,
@@ -13,49 +14,48 @@ public class PathManager {
             Position.POS_15, Position.POS_16, Position.POS_17, Position.POS_18, Position.POS_19
     );
 
-    private static final List<Position> DIAG_A_FULL = List.of(
-            Position.POS_5,  // 바깥길과 공유
-            Position.DIA_A1, Position.DIA_A2,
+    public static final List<Position> DIAG_A_FULL = List.of( // GameController에서 접근 가능하도록 public으로 변경 (선택적)
+            Position.POS_5,
+            Position.DIA_A1, Position.DIA_A2, // 이 지점을 lastMajorNodeBeforeCenter로 설정 가능
             Position.CENTER,
             Position.DIA_A3, Position.DIA_A4,
-            Position.POS_15  // 바깥길과 공유
+            Position.POS_15
     );
 
-    private static final List<Position> DIAG_B_FULL = List.of(
-            Position.POS_10, // 바깥길과 공유
-            Position.DIA_B1, Position.DIA_B2,
+    public static final List<Position> DIAG_B_FULL = List.of( // GameController에서 접근 가능하도록 public으로 변경 (선택적)
+            Position.POS_10,
+            Position.DIA_B1, Position.DIA_B2, // 이 지점을 lastMajorNodeBeforeCenter로 설정 가능
             Position.CENTER,
             Position.DIA_B3, Position.DIA_B4,
-            Position.POS_0   // 바깥길과 공유 (도착점)
+            Position.POS_0
     );
 
-    // 사용자가 직접 구현한 DIAG_A_TO_B 경로 (CENTER에서 가장 빠른 길)
-    private static final List<Position> DIAG_A_TO_B = List.of(
+    // DIAG_A_TO_B는 CENTER에서 나가는 특정 경로이므로, Piece의 lastMajorNodeBeforeCenter를 CENTER로 설정할 수 있음
+    public static final List<Position> DIAG_A_TO_B = List.of(
             Position.CENTER,
             Position.DIA_B3,
             Position.DIA_B4,
             Position.POS_0
     );
 
-    public static List<Position> getNextPositions(Position cur, int steps) {
+
+    public static List<Position> getNextPositions(Piece piece, int steps) { // Piece 객체를 인자로 받음
+        Position cur = piece.getPosition();
+        Position lastNode = piece.getLastMajorNodeBeforeCenter(); // Piece로부터 경로 문맥 가져오기
         List<Position> path = new ArrayList<>();
+
         if (steps == 0) return path;
 
-        // 1) 출발하지 않은 말(OFFBOARD)에서 시작하는 경우 (이전과 동일)
         if (cur == Position.OFFBOARD) {
+            // ... (OFFBOARD 처리 로직 - 이전과 동일, Piece 인자 불필요) ...
             if (steps > 0) {
                 if (!OUTER.isEmpty()) {
-                    path.add(OUTER.get(0)); // POS_0
-                } else {
-                    return path;
-                }
+                    path.add(OUTER.get(0));
+                } else { return path; }
                 for (int i = 1; i <= steps; i++) {
-                    if (i < OUTER.size()) {
-                        path.add(OUTER.get(i));
-                    } else {
-                        if (!path.isEmpty() && path.get(path.size() - 1) != Position.END) {
-                            path.add(Position.END);
-                        }
+                    if (i < OUTER.size()) { path.add(OUTER.get(i)); }
+                    else {
+                        if (!path.isEmpty() && path.get(path.size()-1) != Position.END) path.add(Position.END);
                         break;
                     }
                 }
@@ -63,89 +63,97 @@ public class PathManager {
             return path;
         }
 
-        // 2) CENTER에 도달했을 때 처리법 (사용자 정의 규칙 우선)
-        if (cur == Position.CENTER && steps > 0) {
-            // DIAG_A_TO_B는 CENTER로 시작해야 함
-            int idx = DIAG_A_TO_B.indexOf(cur); // idx should be 0 if DIAG_A_TO_B starts with CENTER
-            if (idx != -1) { // CENTER가 DIAG_A_TO_B에 포함되어 있다면
-                for (int i = 0; i < steps; i++) {
-                    idx++;
-                    if (idx < DIAG_A_TO_B.size()) {
-                        Position targetPos = DIAG_A_TO_B.get(iㅁdx);
-                        path.add(targetPos);
-                        if (targetPos == Position.POS_0 && DIAG_A_TO_B.get(DIAG_A_TO_B.size()-1) == Position.POS_0) { // DIAG_A_TO_B 경로의 끝이 POS_0(도착)이면
-                            path.remove(path.size()-1); // 마지막 POS_0 제거
-                            if (path.isEmpty() || path.get(path.size()-1) != Position.END) path.add(Position.END);
+        // 1. CENTER에서의 처리 (빽도 및 전진)
+        if (cur == Position.CENTER) {
+            if (steps < 0) { // CENTER에서 빽도
+                if (lastNode == Position.DIA_A2) { // A지름길에서 CENTER로 왔다가 빽도
+                    int centerIdxInA = DIAG_A_FULL.indexOf(Position.CENTER);
+                    for (int i = 0; i < Math.abs(steps); i++) {
+                        centerIdxInA--;
+                        if (centerIdxInA >= 0 && centerIdxInA < DIAG_A_FULL.indexOf(Position.CENTER) ) { // DIAG_A_FULL 내에서 후진
+                            path.add(DIAG_A_FULL.get(centerIdxInA));
+                        } else break; // 지름길 시작 이전으로는 안 감 (또는 시작점으로 이동)
+                    }
+                } else if (lastNode == Position.DIA_B2) { // B지름길에서 CENTER로 왔다가 빽도
+                    int centerIdxInB = DIAG_B_FULL.indexOf(Position.CENTER);
+                    for (int i = 0; i < Math.abs(steps); i++) {
+                        centerIdxInB--;
+                        if (centerIdxInB >= 0 && centerIdxInB < DIAG_B_FULL.indexOf(Position.CENTER)) {
+                            path.add(DIAG_B_FULL.get(centerIdxInB));
+                        } else break;
+                    }
+                } else if (lastNode == Position.CENTER && DIAG_A_TO_B.get(0) == Position.CENTER) {
+                    // DIAG_A_TO_B 경로를 타고 CENTER에 "도착"한 상태에서 빽도하는 경우는 거의 없음.
+                    // (DIAG_A_TO_B는 CENTER에서 나가는 경로이므로)
+                    // 만약 이런 경우가 생긴다면, 기본 후진 경로(예: DIAG_A_FULL의 이전)를 따르거나 정의 필요.
+                    // 임시: DIAG_A_FULL의 이전으로.
+                    int centerIdxInA = DIAG_A_FULL.indexOf(Position.CENTER);
+                    for (int i = 0; i < Math.abs(steps); i++) {
+                        centerIdxInA--;
+                        if (centerIdxInA >= 0 && centerIdxInA < DIAG_A_FULL.indexOf(Position.CENTER) ) {
+                            path.add(DIAG_A_FULL.get(centerIdxInA));
+                        } else break;
+                    }
+                }
+                // lastNode가 null이거나 다른 값일 때 (예: 게임 시작 시 CENTER에 놓인 경우) 기본 빽도 경로 지정
+                else if (path.isEmpty()){ // 위 조건들 모두 만족 안하면
+                    int centerIdxInA = DIAG_A_FULL.indexOf(Position.CENTER);
+                    for (int i = 0; i < Math.abs(steps); i++) {
+                        centerIdxInA--;
+                        if (centerIdxInA >= 0 && centerIdxInA < DIAG_A_FULL.indexOf(Position.CENTER)) {
+                            path.add(DIAG_A_FULL.get(centerIdxInA));
+                        } else break;
+                    }
+                }
+                return path;
+            } else { // CENTER에서 전진 (사용자 정의 DIAG_A_TO_B 우선)
+                int idx = DIAG_A_TO_B.indexOf(cur); // cur == CENTER
+                if (idx != -1) { // DIAG_A_TO_B가 CENTER로 시작한다면 idx는 0
+                    for (int i = 0; i < steps; i++) {
+                        idx++;
+                        if (idx < DIAG_A_TO_B.size()) {
+                            Position targetPos = DIAG_A_TO_B.get(idx);
+                            path.add(targetPos);
+                            if (targetPos == Position.POS_0 && DIAG_A_TO_B.get(DIAG_A_TO_B.size()-1) == Position.POS_0) {
+                                path.remove(path.size()-1);
+                                if (path.isEmpty() || path.get(path.size()-1) != Position.END) path.add(Position.END);
+                                break;
+                            }
+                        } else {
+                            if (!path.isEmpty() && path.get(path.size() - 1) != Position.END) path.add(Position.END);
                             break;
                         }
-                    } else {
-                        if (!path.isEmpty() && path.get(path.size() - 1) != Position.END) {
-                            path.add(Position.END);
-                        }
-                        break;
                     }
+                    return path;
                 }
-                return path;
             }
         }
 
-        // 3) 빽도 처리 시, 지름길 시작/끝점(바깥길과 공유)에 있다면 바깥길 우선
-        if (steps < 0) { // 빽도일 경우
-            if (cur == Position.POS_5 || cur == Position.POS_15 || cur == Position.POS_10 || cur == Position.POS_0) {
-                // 이 지점들은 바깥길에도 속하므로, 빽도는 바깥길 규칙을 따름
-                // (아래 OUTER.contains(cur) 블록에서 처리될 것임)
-            } else if (DIAG_A_FULL.contains(cur)) { // 순수 지름길 내부에서의 빽도 (공유점 제외)
-                int currentIndex = DIAG_A_FULL.indexOf(cur);
-                for (int i = 0; i < Math.abs(steps); i++) {
-                    currentIndex--;
-                    if (currentIndex >= 0) {
-                        path.add(DIAG_A_FULL.get(currentIndex));
-                    } else { // 지름길 시작 이전으로 가려 하면, 해당 지름길 시작점으로 (더 이상 뒤로 못 감)
-                        if (path.isEmpty() || path.get(path.size()-1) != DIAG_A_FULL.get(0)) { // DIAG_A_FULL.get(0)은 POS_5
-                            path.clear(); // 경로 비우고 시작점만 추가
-                            path.add(DIAG_A_FULL.get(0));
-                        }
-                        break;
-                    }
-                }
-                return path;
-            } else if (DIAG_B_FULL.contains(cur)) { // 순수 지름길 내부에서의 빽도 (공유점 제외)
-                int currentIndex = DIAG_B_FULL.indexOf(cur);
-                for (int i = 0; i < Math.abs(steps); i++) {
-                    currentIndex--;
-                    if (currentIndex >= 0) {
-                        path.add(DIAG_B_FULL.get(currentIndex));
-                    } else {
-                        if (path.isEmpty() || path.get(path.size()-1) != DIAG_B_FULL.get(0)) { // DIAG_B_FULL.get(0)은 POS_10
-                            path.clear();
-                            path.add(DIAG_B_FULL.get(0));
-                        }
-                        break;
-                    }
-                }
-                return path;
-            }
-            // 빽도인데 위 조건들에 해당 안되면, 아래 바깥길 로직으로 넘어감
+        // 2. 지름길 시작/끝점(바깥길과 공유)에서의 빽도 -> 바깥길 규칙 따름
+        if (steps < 0 && (cur == Position.POS_5 || cur == Position.POS_15 || cur == Position.POS_10 || cur == Position.POS_0)) {
+            // 이 경우는 아래 OUTER.contains(cur) 블록에서 처리될 것임
         }
-
-
-        // 4) 일반 전진 시, 지름길 처리 (CENTER는 이미 위에서 처리됨)
-        if (steps > 0) {
-            if (DIAG_A_FULL.contains(cur) && cur != Position.CENTER) {
-                int currentIndex = DIAG_A_FULL.indexOf(cur);
+        // 3. 그 외 지름길 처리 (전진 또는 순수 지름길 내부 빽도)
+        else if (DIAG_A_FULL.contains(cur)) { // cur가 CENTER가 아닌 DIAG_A_FULL 위의 점
+            int currentIndex = DIAG_A_FULL.indexOf(cur);
+            if (steps > 0) { // 전진
                 for (int i = 0; i < steps; i++) {
                     currentIndex++;
-                    if (currentIndex < DIAG_A_FULL.size()) {
-                        path.add(DIAG_A_FULL.get(currentIndex));
-                    } else {
-                        if (path.isEmpty() || path.get(path.size() - 1) != Position.END) path.add(Position.END);
-                        break;
-                    }
+                    if (currentIndex < DIAG_A_FULL.size()) path.add(DIAG_A_FULL.get(currentIndex));
+                    else { if (path.isEmpty() || path.get(path.size()-1) != Position.END) path.add(Position.END); break; }
                 }
-                return path;
+            } else { // 빽도 (cur는 POS_5, POS_15, CENTER가 아닌 순수 지름길 내부)
+                for (int i = 0; i < Math.abs(steps); i++) {
+                    currentIndex--;
+                    if (currentIndex >= DIAG_A_FULL.indexOf(Position.POS_5)) { // 지름길 시작점까지만 후진
+                        path.add(DIAG_A_FULL.get(currentIndex));
+                    } else break;
+                }
             }
-            if (DIAG_B_FULL.contains(cur) && cur != Position.CENTER) {
-                int currentIndex = DIAG_B_FULL.indexOf(cur);
+            return path;
+        } else if (DIAG_B_FULL.contains(cur)) { // cur가 CENTER가 아닌 DIAG_B_FULL 위의 점
+            int currentIndex = DIAG_B_FULL.indexOf(cur);
+            if (steps > 0) { // 전진
                 for (int i = 0; i < steps; i++) {
                     currentIndex++;
                     if (currentIndex < DIAG_B_FULL.size()) {
@@ -156,19 +164,24 @@ public class PathManager {
                             if (path.isEmpty() || path.get(path.size()-1) != Position.END) path.add(Position.END);
                             break;
                         }
-                    } else {
-                        if (path.isEmpty() || path.get(path.size()-1) != Position.END) path.add(Position.END);
-                        break;
-                    }
+                    } else { if (path.isEmpty() || path.get(path.size()-1) != Position.END) path.add(Position.END); break; }
                 }
-                return path;
+            } else { // 빽도 (cur는 POS_10, POS_0, CENTER가 아닌 순수 지름길 내부)
+                for (int i = 0; i < Math.abs(steps); i++) {
+                    currentIndex--;
+                    if (currentIndex >= DIAG_B_FULL.indexOf(Position.POS_10)) {
+                        path.add(DIAG_B_FULL.get(currentIndex));
+                    } else break;
+                }
             }
+            return path;
         }
 
-        // 5) 바깥쪽 경로 (OUTER) 처리 (빽도 포함)
+        // 4. 바깥쪽 경로 (OUTER) 처리
         if (OUTER.contains(cur)) {
+            // ... (이전과 동일한 OUTER 경로 처리 로직) ...
             int currentIndex = OUTER.indexOf(cur);
-            if (steps > 0) { // 앞으로 이동
+            if (steps > 0) {
                 for (int i_loop_counter = 0; i_loop_counter < steps; i_loop_counter++) {
                     currentIndex++;
                     if (currentIndex >= OUTER.size()) {
@@ -176,26 +189,22 @@ public class PathManager {
                         break;
                     }
                     path.add(OUTER.get(currentIndex));
-                    // POS_0에 도착하면(출발점이자 도착점), 그리고 시작 위치가 POS_0이 아니었다면 END 처리
                     if (OUTER.get(currentIndex) == Position.POS_0 && cur != Position.POS_0) {
-                        path.remove(path.size()-1); // 마지막 POS_0 제거
+                        path.remove(path.size()-1);
                         if (path.isEmpty() || path.get(path.size()-1) != Position.END) path.add(Position.END);
                         break;
                     }
                 }
-            } else { // 뒤로 이동 (빽도)
+            } else { // 빽도
                 for (int i_loop_counter = 0; i_loop_counter < Math.abs(steps); i_loop_counter++) {
                     currentIndex--;
-                    if (currentIndex < 0) { // POS_0에서 빽도하면 POS_19로
-                        path.add(OUTER.get(OUTER.size() - 1));
-                    } else {
-                        path.add(OUTER.get(currentIndex));
-                    }
+                    if (currentIndex < 0) { path.add(OUTER.get(OUTER.size() - 1)); }
+                    else { path.add(OUTER.get(currentIndex)); }
                 }
             }
             return path;
         }
 
-        return path; // 모든 조건에 해당하지 않으면 빈 경로 (예: END에서 이동 시도)
+        return path;
     }
 }
