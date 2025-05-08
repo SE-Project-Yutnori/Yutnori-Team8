@@ -7,15 +7,16 @@ import backend.game.YutThrowResult;
 import backend.model.Piece;
 import backend.model.Player;
 import backend.model.Position;
+import backend.model.BoardShape;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
+// import java.awt.event.ActionEvent; // 현재 직접 사용 안함
+// import java.awt.event.ActionListener; // 현재 직접 사용 안함
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Arrays; // promptForDesignatedThrow에서 사용
 import java.util.List;
-import java.util.Vector;
+import java.util.Vector; // JComboBox 모델용
 import java.util.stream.Collectors;
 
 public class YutGameUI extends JFrame {
@@ -30,41 +31,40 @@ public class YutGameUI extends JFrame {
     private JComboBox<String> yutResultChoiceDropdown;
     private JComboBox<String> pieceChoiceDropdown;
     private JButton applyMoveButton;
-    private JButton endTurnButton;
+    private JButton endTurnButton; // "턴 마치기" 버튼
     private JPanel actionPanel; // 윷 선택, 말 선택, 이동 버튼을 담을 패널
+    private BoardShape selectedBoardShape = BoardShape.TRADITIONAL;
 
     public static void launch() {
         SwingUtilities.invokeLater(() -> {
             YutGameUI ui = new YutGameUI();
-            GameController controller = new GameController(ui);
-            ui.setController(controller);
-            ui.setVisible(true);
-            ui.promptForGameSetup();
+            ui.promptForGameSetup(); // 게임 설정 시작
         });
     }
 
     public YutGameUI() {
         super("전통 윷놀이 (MVC + 전략적 선택)");
-        setSize(1200, 800);
+        setSize(1200, 800); // 너비 약간 늘림
         setLocationRelativeTo(null);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setLayout(new BorderLayout(10, 10));
+        setLayout(new BorderLayout(10, 10)); // 컴포넌트 간 간격 추가
 
         statusLabel = new JLabel("게임 설정을 시작하세요.", SwingConstants.CENTER);
         statusLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
         add(statusLabel, BorderLayout.NORTH);
 
-        boardPanel = new BoardPanel(null);
+        boardPanel = new BoardPanel(null); // 초기에는 null 보드
         add(boardPanel, BorderLayout.CENTER);
 
         indicatorArea = new JTextArea(10, 15); // 너비 조정
         indicatorArea.setEditable(false);
+        indicatorArea.setFont(new Font("Monospaced", Font.PLAIN, 12)); // 가독성 위한 폰트
         indicatorArea.setBorder(BorderFactory.createTitledBorder("게임 현황"));
-        add(new JScrollPane(indicatorArea), BorderLayout.WEST);
+        add(new JScrollPane(indicatorArea), BorderLayout.WEST); // 위치 변경 (왼쪽)
 
         // 오른쪽 컨트롤 패널 (던지기 버튼, 액션 패널, 턴 종료 버튼)
         JPanel eastControlPanel = new JPanel();
-        eastControlPanel.setLayout(new BoxLayout(eastControlPanel, BoxLayout.Y_AXIS));
+        eastControlPanel.setLayout(new BoxLayout(eastControlPanel, BoxLayout.Y_AXIS)); // 세로 정렬
         eastControlPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
         // 던지기 버튼 패널
@@ -75,7 +75,7 @@ public class YutGameUI extends JFrame {
         throwButtonsPanel.add(designatedThrowButton);
         eastControlPanel.add(throwButtonsPanel);
 
-        // 액션 패널 (윷 선택, 말 선택, 이동 실행) - 처음에는 숨김
+        // 액션 패널 (윷 선택, 말 선택, 이동 실행)
         actionPanel = new JPanel(new GridLayout(0, 1, 5, 5)); // 세로 배치, 컴포넌트간 간격
         actionPanel.setBorder(BorderFactory.createTitledBorder("말 이동 선택"));
 
@@ -87,13 +87,13 @@ public class YutGameUI extends JFrame {
         actionPanel.add(new JLabel("움직일 말:"));
         actionPanel.add(pieceChoiceDropdown);
 
-        applyMoveButton = new JButton("선택한 대로 이동");
+        applyMoveButton = new JButton("선택한 대로 이동 실행");
         actionPanel.add(applyMoveButton);
         actionPanel.setVisible(false); // 초기에는 숨김
         eastControlPanel.add(actionPanel);
 
         // 턴 종료 버튼
-        endTurnButton = new JButton("턴 마치기");
+        endTurnButton = new JButton("턴 마치기 / 윷 사용 포기");
         endTurnButton.setEnabled(false); // 초기에는 비활성화
         JPanel endTurnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         endTurnPanel.add(endTurnButton);
@@ -105,7 +105,7 @@ public class YutGameUI extends JFrame {
         // 하단 로그 패널
         logArea = new JTextArea(10, 40); // 높이 증가
         logArea.setEditable(false);
-        logArea.setBorder(BorderFactory.createEtchedBorder());
+        logArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
         JScrollPane logScrollPane = new JScrollPane(logArea);
         add(logScrollPane, BorderLayout.SOUTH);
 
@@ -120,8 +120,8 @@ public class YutGameUI extends JFrame {
             if (controller != null) controller.handleThrowRequest(false);
         });
         applyMoveButton.addActionListener(e -> applySelectedMoveAction());
-        endTurnButton.addActionListener(e -> {
-            if (controller != null) controller.decideNextStepAfterTurnActions();
+        endTurnButton.addActionListener(e -> { // 수정된 리스너 연결
+            if (controller != null) controller.playerEndsTurnActions();
         });
     }
 
@@ -129,43 +129,33 @@ public class YutGameUI extends JFrame {
         if (controller == null) return;
 
         String selectedYutResultStr = (String) yutResultChoiceDropdown.getSelectedItem();
-        String selectedPieceStr = (String) pieceChoiceDropdown.getSelectedItem();
+        // String selectedPieceStr = (String) pieceChoiceDropdown.getSelectedItem(); // 이 방식 대신 인덱스 사용
 
         if (selectedYutResultStr == null || selectedYutResultStr.isEmpty() ||
-                selectedPieceStr == null || selectedPieceStr.isEmpty()) {
+                pieceChoiceDropdown.getSelectedIndex() == -1 ) { // 선택된 말이 없는 경우
             showError("윷 결과와 움직일 말을 모두 선택해야 합니다.");
             return;
         }
 
         YutThrowResult yutResultToApply = null;
         try {
-            yutResultToApply = YutThrowResult.fromString(selectedYutResultStr.split(" ")[0]); // "DO (1)" -> "DO"
+            // "DO (1칸)" 같은 형식에서 "DO"만 추출
+            yutResultToApply = YutThrowResult.fromString(selectedYutResultStr.split(" ")[0]);
         } catch (IllegalArgumentException ex) {
-            showError("선택된 윷 결과가 유효하지 않습니다.");
+            showError("선택된 윷 결과가 유효하지 않습니다: " + selectedYutResultStr);
             return;
         }
 
-        // "1번 말 (위치: OFFBOARD)" 형식에서 말 객체를 찾아야 함
-        // Piece 객체를 직접 JComboBox에 저장하거나, 문자열에서 ID를 파싱해야 함
-        // 여기서는 컨트롤러에게 문자열을 전달하고 컨트롤러가 해석하도록 할 수도 있음
-        // 임시: 컨트롤러가 말 목록을 주면, 선택된 문자열과 비교하여 Piece 객체 찾기
         List<Piece> movablePieces = controller.getMovablePiecesForCurrentPlayer();
-        Piece pieceToMove = null;
-        for (Piece p : movablePieces) {
-            String pieceDisplay = String.format("%s (위치: %s)",
-                    p.getOwner().getName().replace("Player ", "") + "번 말", // "1번 말" 형식으로
-                    (p.getPosition() == Position.OFFBOARD ? "출발안함" : p.getPosition().name()));
-            // JComboBox에 저장된 형식과 비교해야 함 (아래 updateActionPanelControls 참고)
-            // 현재 pieceChoiceDropdown은 인덱스 기반으로 생성되므로, 선택된 인덱스를 사용할 수 있음.
-        }
         int selectedPieceIndex = pieceChoiceDropdown.getSelectedIndex();
+        Piece pieceToMove = null;
+
         if (selectedPieceIndex >= 0 && selectedPieceIndex < movablePieces.size()) {
             pieceToMove = movablePieces.get(selectedPieceIndex);
         }
 
-
         if (pieceToMove == null) {
-            showError("선택된 말이 유효하지 않습니다.");
+            showError("선택된 말이 유효하지 않습니다. (리스트 인덱스 문제)");
             return;
         }
         controller.applySelectedYutAndPiece(yutResultToApply, pieceToMove);
@@ -177,37 +167,50 @@ public class YutGameUI extends JFrame {
     }
 
     public void setGameModel(Game gameModel) {
-        this.gameModel = gameModel;
-        if (this.boardPanel != null) {
-            remove(this.boardPanel);
-        }
-        if (gameModel != null && gameModel.getBoard() != null) {
-            this.boardPanel = new BoardPanel(gameModel.getBoard());
-            add(this.boardPanel, BorderLayout.CENTER);
-        } else {
-            this.boardPanel = new BoardPanel(null);
-            add(this.boardPanel, BorderLayout.CENTER);
-        }
-        revalidate();
-        repaint();
+    	this.gameModel = gameModel;
+        remove(boardPanel);
+        boardPanel = new BoardPanel(gameModel != null ? gameModel.getBoard() : null);
+        boardPanel.setBoardShape(selectedBoardShape);
+        add(boardPanel, BorderLayout.CENTER);
+        revalidate(); repaint();
+    }
+    
+    private void setMainUIVisible(boolean visible) {
+        statusLabel.setVisible(visible);
+        boardPanel.setVisible(visible);
     }
 
     public void promptForGameSetup() {
-        int playerCount = promptForInt("참가자 수 (2~4명):", 2, 4);
-        if (playerCount == -1) { System.exit(0); return; }
-        int pieceCount = promptForInt("말 수 (2~5개):", 2, 5);
-        if (pieceCount == -1) { System.exit(0); return; }
-
-        if (controller != null) {
-            controller.initializeGame(playerCount, pieceCount);
-            setGameInteractionEnabled(true); // 게임 시작 시 버튼 활성화
-            actionPanel.setVisible(false); // 말 이동 선택은 아직 숨김
-            endTurnButton.setEnabled(false);
+    	setVisible(true);
+        promptForBoardShape();
+        int players = promptForInt("참가자 수(2~4):", 2, 4);
+        int pieces  = promptForInt("말 수(2~5):", 2, 5);
+        if (players < 0 || pieces < 0) System.exit(0);
+        controller = new GameController(this, selectedBoardShape);
+        controller.initializeGame(players, pieces);
+        setGameInteractionEnabled(true);
+    }
+    
+    private void promptForBoardShape() {
+        Object[] options = {"사각형", "오각형", "육각형"};
+        int choice = JOptionPane.showOptionDialog(
+                this,
+                "보드 모양을 선택하세요:",
+                "보드 모양 선택",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                options,
+                options[0]
+        );
+        switch (choice) {
+            case 1 -> selectedBoardShape = BoardShape.PENTAGON;
+            case 2 -> selectedBoardShape = BoardShape.HEXAGON;
+            default -> selectedBoardShape = BoardShape.TRADITIONAL;
         }
     }
 
     private int promptForInt(String message, int min, int max) {
-        // ... (이전과 동일) ...
         String input;
         int value;
         while (true) {
@@ -227,7 +230,6 @@ public class YutGameUI extends JFrame {
     }
 
     public YutThrowResult promptForDesignatedThrow() {
-        // ... (이전과 동일) ...
         YutThrowResult[] options = YutThrowResult.values();
         String[] labels = Arrays.stream(options).map(Enum::name).toArray(String[]::new);
         String selected = (String) JOptionPane.showInputDialog(
@@ -242,13 +244,7 @@ public class YutGameUI extends JFrame {
         }
     }
 
-    // 이 메소드는 이제 GameController에서 직접 호출되지 않고, UI 업데이트를 통해 간접적으로 사용됨
-    // public Piece promptForPieceSelection(List<Piece> movablePieces, String message) { ... }
-    // public YutThrowResult promptForThrowSelection(List<YutThrowResult> availableThrows) { ... }
-
-
     public void logMessage(String message) {
-        // ... (EDT 처리 포함, 이전과 동일) ...
         if (SwingUtilities.isEventDispatchThread()) {
             logArea.append(message + "\n");
             logArea.setCaretPosition(logArea.getDocument().getLength());
@@ -261,7 +257,6 @@ public class YutGameUI extends JFrame {
     }
 
     public void updateStatusLabel(String text) {
-        // ... (EDT 처리 포함, 이전과 동일) ...
         if (SwingUtilities.isEventDispatchThread()) {
             statusLabel.setText(text);
         } else {
@@ -270,7 +265,6 @@ public class YutGameUI extends JFrame {
     }
 
     public void refreshBoard() {
-        // ... (EDT 처리 포함, 이전과 동일) ...
         if (SwingUtilities.isEventDispatchThread()) {
             if (boardPanel != null) {
                 boardPanel.repaint();
@@ -285,7 +279,6 @@ public class YutGameUI extends JFrame {
     }
 
     public void updateIndicators() {
-        // ... (EDT 처리 포함, 이전과 동일) ...
         if (SwingUtilities.isEventDispatchThread()) {
             updateIndicatorsLogic();
         } else {
@@ -294,9 +287,16 @@ public class YutGameUI extends JFrame {
     }
 
     private void updateIndicatorsLogic() {
-        // ... (Null 체크 강화, 이전과 동일) ...
-        if (gameModel == null || gameModel.getPlayers() == null) return;
+        if (gameModel == null || gameModel.getPlayers() == null) {
+            indicatorArea.setText(""); // 데이터 없으면 비움
+            return;
+        }
         StringBuilder sb = new StringBuilder();
+        sb.append("=== 현재 턴 ===").append("\n");
+        if (gameModel.getCurrentPlayer() != null) {
+            sb.append(gameModel.getCurrentPlayer().getName()).append("\n\n");
+        }
+        sb.append("=== 말 현황 ===").append("\n");
         for (Player p : gameModel.getPlayers()) {
             if (p != null && p.getPieces() != null) {
                 long offBoardCount = p.getPieces().stream().filter(pc -> pc != null && pc.getPosition() == Position.OFFBOARD).count();
@@ -307,8 +307,8 @@ public class YutGameUI extends JFrame {
         indicatorArea.setText(sb.toString());
     }
 
-    public void showInfo(String message) { /* ... (EDT 처리) ... */ SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, message, "알림", JOptionPane.INFORMATION_MESSAGE));}
-    public void showError(String message) { /* ... (EDT 처리) ... */ SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, message, "오류", JOptionPane.ERROR_MESSAGE));}
+    public void showInfo(String message) { SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, message, "알림", JOptionPane.INFORMATION_MESSAGE));}
+    public void showError(String message) { SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, message, "오류", JOptionPane.ERROR_MESSAGE));}
 
     public void showWinMessage(String winnerName) {
         SwingUtilities.invokeLater(() -> {
@@ -319,7 +319,6 @@ public class YutGameUI extends JFrame {
         });
     }
 
-    // GameController가 UI 상태를 업데이트하도록 호출할 메소드들
     public void enableThrowButtons(boolean enable) {
         SwingUtilities.invokeLater(() -> {
             randomThrowButton.setEnabled(enable);
@@ -330,10 +329,9 @@ public class YutGameUI extends JFrame {
     public void showActionPanel(boolean show, List<YutThrowResult> availableThrows, List<Piece> movablePieces) {
         SwingUtilities.invokeLater(() -> {
             actionPanel.setVisible(show);
-            endTurnButton.setEnabled(show); // 액션 패널 보일 때 턴 종료 버튼도 활성화/비활성화
+            endTurnButton.setEnabled(show); // 액션 패널이 보일 때(즉, 행동 선택이 필요할 때) 턴 종료 버튼도 함께 제어
 
             if (show) {
-                // 윷 결과 드롭다운 업데이트
                 Vector<String> yutResultsVector = new Vector<>();
                 if (availableThrows != null) {
                     for (YutThrowResult yr : availableThrows) {
@@ -342,22 +340,21 @@ public class YutGameUI extends JFrame {
                 }
                 yutResultChoiceDropdown.setModel(new DefaultComboBoxModel<>(yutResultsVector));
 
-                // 말 선택 드롭다운 업데이트
                 Vector<String> piecesVector = new Vector<>();
                 if (movablePieces != null) {
+                    // 각 Piece 객체에 고유 ID가 있다면 그것을 사용하는 것이 더 안정적일 수 있음
+                    // 여기서는 임시로 플레이어 번호와 리스트 인덱스를 조합하여 표시
                     for (int i = 0; i < movablePieces.size(); i++) {
                         Piece p = movablePieces.get(i);
-                        // 간단하게 "플레이어ID-말번호 (위치)" 형식으로 표시
-                        // 또는 Player 객체에서 말의 고유 ID를 가져와 사용할 수도 있음
-                        String pieceDisplayName = String.format("%s-%d번말 (%s)",
-                                p.getOwner().getName().replaceAll("[^0-9]", ""), // "Player 1" -> "1"
-                                i + 1, // 단순 인덱스 기반 번호
-                                p.getPosition() == Position.OFFBOARD ? "출발안함" : p.getPosition().name());
-                        piecesVector.add(pieceDisplayName);
+                        String playerNumber = p.getOwner().getName().replaceAll("[^0-9]", ""); // "Player 1" -> "1"
+                        String pieceId = playerNumber + "-" + (i + 1); // 예: "1-1번말", "2-1번말"
+                        String positionName = (p.getPosition() == Position.OFFBOARD) ? "출발안함" : p.getPosition().name();
+                        piecesVector.add(String.format("%s번 말 (위치: %s)", pieceId, positionName));
                     }
                 }
                 pieceChoiceDropdown.setModel(new DefaultComboBoxModel<>(piecesVector));
 
+                // 이동 실행 버튼은 선택할 윷과 말이 있을 때만 활성화
                 applyMoveButton.setEnabled(!yutResultsVector.isEmpty() && !piecesVector.isEmpty());
             } else {
                 yutResultChoiceDropdown.removeAllItems();
@@ -367,9 +364,10 @@ public class YutGameUI extends JFrame {
         });
     }
 
+    // 게임 시작/종료 시 전체 인터랙션 버튼 상태 제어
     private void setGameInteractionEnabled(boolean enabled) {
         randomThrowButton.setEnabled(enabled);
         designatedThrowButton.setEnabled(enabled);
-        // applyMoveButton, endTurnButton 등은 상황에 따라 controller가 직접 제어
+        // applyMoveButton과 endTurnButton은 showActionPanel에서 상황에 맞게 제어됨
     }
 }

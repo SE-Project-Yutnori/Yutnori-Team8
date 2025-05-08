@@ -1,9 +1,9 @@
-// File: src/backend/controller/GameController.java
 package backend.controller;
 
 import backend.game.Game;
 import backend.game.YutThrowResult;
 import backend.game.YutThrower;
+import backend.model.BoardShape;
 import backend.model.PathManager;
 import backend.model.Piece;
 import backend.model.Player;
@@ -25,14 +25,16 @@ public class GameController {
         }
     }
 
-    private Game game; // initializeGame에서 할당되므로 final 아님
-    private final YutGameUI ui; // 생성자에서 할당 후 변경 없으므로 final
-    private final List<YutThrowResult> currentTurnThrows = new ArrayList<>(); // 객체 자체가 변경되지 않으므로 final
-    private int pendingExtraTurns = 0; // 잡기 또는 윷/모로 인해 누적된 추가 던지기 횟수
-    private boolean yutOrMoJustThrown = false; // 바로 직전에 윷/모를 던졌는지 (연속 던지기 유도용)
+    private Game game;
+    private BoardShape selectedBoardShape;
+    private final YutGameUI ui;
+    private final List<YutThrowResult> currentTurnThrows = new ArrayList<>();
+    private int pendingExtraTurns = 0;
+    private boolean yutOrMoEffectFromLastThrow = false;
 
-    public GameController(YutGameUI ui) {
+    public GameController(YutGameUI ui, BoardShape shape) {
         this.ui = ui;
+        this.selectedBoardShape = shape; 
     }
 
     public void initializeGame(int playerCount, int pieceCount) {
@@ -50,12 +52,26 @@ public class GameController {
     private void prepareNewTurn() {
         this.currentTurnThrows.clear();
         this.pendingExtraTurns = 0;
-        this.yutOrMoJustThrown = false;
+        this.yutOrMoEffectFromLastThrow = false;
+        // 턴이 바뀌면 현재 플레이어의 모든 말의 경로 문맥을 초기화하는 것이 안전할 수 있음.
+        // 단, 이월되는 정보가 있다면 신중해야 함
+        // Player currentPlayer = game != null ? game.getCurrentPlayer() : null;
+        // if (currentPlayer != null) {
+        //     for (Piece p : currentPlayer.getPieces()) {
+        //         p.clearPathContext();
+        //     }
+        // }
+        if (game != null && game.getCurrentPlayer() != null) {
+            game.getCurrentPlayer().getPieces().forEach(Piece::clearPathContext);
+        }
     }
 
-    private void resetForCurrentPlayerTurnSegment() {
+    private void startNewThrowSessionForCurrentPlayer() {
         this.currentTurnThrows.clear();
-        this.yutOrMoJustThrown = false;
+        this.yutOrMoEffectFromLastThrow = false;
+        ui.enableThrowButtons(true);
+        ui.showActionPanel(false, null, null);
+        ui.logMessage(game.getCurrentPlayer().getName() + "님, 윷을 던져주세요.");
     }
 
     public Game getGame() {
@@ -64,107 +80,87 @@ public class GameController {
 
     public void handleThrowRequest(boolean isRandom) {
         if (!canPlayerAct()) return;
-
         Player currentPlayer = game.getCurrentPlayer();
-        YutThrowResult result;
-        this.yutOrMoJustThrown = false;
 
-        if (isRandom) {
-            result = YutThrower.throwRandom();
-        } else {
-            YutThrowResult selectedResult = ui.promptForDesignatedThrow();
-            if (selectedResult == null) return;
-            result = selectedResult;
+        if (this.pendingExtraTurns > 0) {
+            this.pendingExtraTurns--;
+            ui.logMessage("예약된 추가 던지기 기회를 사용합니다. (남은 예약: " + this.pendingExtraTurns + "번)");
+        }
+        this.yutOrMoEffectFromLastThrow = false;
+
+        YutThrowResult result;
+        if (isRandom) result = YutThrower.throwRandom();
+        else {
+            result = ui.promptForDesignatedThrow();
+            if (result == null) { displayAvailableThrowsAndPromptAction(); return; }
         }
         ui.logMessage(currentPlayer.getName() + " → " + result.name());
         currentTurnThrows.add(result);
 
         if (result == YutThrowResult.YUT || result == YutThrowResult.MO) {
-            this.yutOrMoJustThrown = true;
+            this.yutOrMoEffectFromLastThrow = true;
         }
-
-        if (!this.yutOrMoJustThrown && this.currentTurnThrows.size() == 1 && this.pendingExtraTurns == 0) {
-            ui.logMessage("하나의 결과만 나왔습니다. 바로 이동할 말을 선택하세요.");
-            ui.enableThrowButtons(false);
-            ui.showActionPanel(true, getCurrentAvailableThrows(), getMovablePiecesForCurrentPlayer());
-        } else {
-            displayAvailableThrowsAndPromptAction();
-        }
+        displayAvailableThrowsAndPromptAction();
     }
 
     private void displayAvailableThrowsAndPromptAction() {
         if (!canPlayerAct()) return;
-
         List<YutThrowResult> availableThrows = getCurrentAvailableThrows();
         List<Piece> movablePieces = getMovablePiecesForCurrentPlayer();
 
-        boolean hasAvailableActionsToTake = !availableThrows.isEmpty(); // 움직일 윷이 있는지
-        boolean canPlayerThrowAgain = this.yutOrMoJustThrown || this.pendingExtraTurns > 0; // 더 던질 수 있는지
+        boolean hasYutToApply = !availableThrows.isEmpty();
+        boolean canThrowFromYutMo = this.yutOrMoEffectFromLastThrow;
+        boolean hasReservedTurns = this.pendingExtraTurns > 0;
 
-        if (!hasAvailableActionsToTake && !canPlayerThrowAgain) {
-            decideNextStepAfterTurnActions();
+        if (!hasYutToApply && !canThrowFromYutMo && !hasReservedTurns) {
+            playerEndsTurnActions(); // 모든 행동 가능성 소진 시 턴 종료
             return;
         }
 
         ui.logMessage(game.getCurrentPlayer().getName() + "님, 행동을 선택하세요.");
-        if (hasAvailableActionsToTake){
-            ui.logMessage("사용 가능한 윷: [" + availableThrows.stream().map(Enum::name).collect(Collectors.joining(", ")) + "]");
-        } else {
-            ui.logMessage("현재 사용할 수 있는 윷 결과가 없습니다. 윷을 던지거나 턴을 마칠 수 있습니다.");
-        }
+        if (hasYutToApply) ui.logMessage("사용 가능한 윷: [" + availableThrows.stream().map(Enum::name).collect(Collectors.joining(", ")) + "]");
+        else ui.logMessage("현재 사용할 수 있는 윷 결과가 없습니다.");
 
-        ui.enableThrowButtons(canPlayerThrowAgain);
+        ui.enableThrowButtons(canThrowFromYutMo || hasReservedTurns);
+        if (canThrowFromYutMo) ui.logMessage("방금 윷/모! 한 번 더 던지거나, 현재 윷으로 이동 가능.");
+        if (hasReservedTurns) ui.logMessage("예약된 추가 던지기 " + this.pendingExtraTurns + "번 가능.");
 
-        if (this.yutOrMoJustThrown) {
-            ui.logMessage("방금 윷/모가 나왔습니다! 한 번 더 던지거나, 현재 윷으로 이동할 수 있습니다.");
-        }
-        if (this.pendingExtraTurns > 0) {
-            ui.logMessage("잡기 등으로 인해 " + this.pendingExtraTurns + "번의 추가 던지기 기회가 예약되어 있습니다.");
-        }
-
-        ui.showActionPanel(hasAvailableActionsToTake, availableThrows, movablePieces);
+        ui.showActionPanel(hasYutToApply, availableThrows, movablePieces);
     }
 
     public void applySelectedYutAndPiece(YutThrowResult throwToApply, Piece pieceToMove) {
         if (!canPlayerAct() || !currentTurnThrows.contains(throwToApply)) {
-            ui.showError("선택한 윷 결과는 현재 사용할 수 없거나 잘못된 시도입니다.");
-            displayAvailableThrowsAndPromptAction();
+            ui.logMessage("유효하지 않은 행동입니다.");
             return;
         }
+        
         if (pieceToMove == null || pieceToMove.isFinished() || pieceToMove.getOwner() != game.getCurrentPlayer()) {
-            ui.showError("선택한 말은 움직일 수 없거나 잘못된 말입니다.");
-            displayAvailableThrowsAndPromptAction();
+            ui.logMessage("유효하지 않은 말 선택입니다.");
             return;
         }
+        
         if (pieceToMove.getPosition() == Position.OFFBOARD && throwToApply.getMove() < 0) {
-            ui.logMessage(game.getCurrentPlayer().getName() + "님, 출발하지 않은 말은 빽도로 움직일 수 없습니다.");
-            displayAvailableThrowsAndPromptAction();
+            ui.logMessage("대기 말은 뒤로 이동할 수 없습니다.");
             return;
         }
 
-        boolean wasYutOrMoJustThrownBeforeMove = this.yutOrMoJustThrown;
-        this.yutOrMoJustThrown = false;
+        this.yutOrMoEffectFromLastThrow = false; // 말을 움직이는 액션을 시작하면 이 상태는 리셋
 
         MoveOutcome outcome = movePiece(game.getCurrentPlayer(), pieceToMove, throwToApply);
         currentTurnThrows.remove(throwToApply);
 
         if (outcome.captured) {
             this.pendingExtraTurns++;
-            ui.logMessage("상대 말을 잡아 추가 던지기 기회가 +1 되었습니다! (예약된 추가 던지기: " + this.pendingExtraTurns + "번)");
+            ui.logMessage("상대 말을 잡아 추가 던지기 +1! (총 예약 " + this.pendingExtraTurns + "번)");
         }
-
-        // 윷/모를 던지고 그 결과로 바로 말을 움직였다면, yutOrMoJustThrown은 false가 되었고,
-        // 이로 인한 추가 턴 기회는 decideNextStepAfterTurnActions에서 pendingExtraTurns로 변환될 것임.
-        // 만약, 윷/모를 던지고 말을 움직였는데, 그 움직임으로 인해 또 다른 윷/모가 발생하지는 않으므로
-        // yutOrMoJustThrown은 false 유지.
 
         ui.refreshBoard();
         ui.updateIndicators();
-
-        if (game.checkWin(game.getCurrentPlayer())) {
-            ui.showWinMessage(game.getCurrentPlayer().getName() + " 승리!");
-            prepareNewTurn(); // 상태 초기화
-            currentTurnThrows.clear();
+        
+        // 승리 조건 확인
+        if (checkPlayerWin(game.getCurrentPlayer())) {
+            ui.logMessage(game.getCurrentPlayer().getName() + "님이 승리했습니다!");
+            ui.updateStatusLabel(game.getCurrentPlayer().getName() + "님이 승리했습니다!");
             ui.enableThrowButtons(false);
             ui.showActionPanel(false, null, null);
             return;
@@ -173,29 +169,30 @@ public class GameController {
         displayAvailableThrowsAndPromptAction();
     }
 
-    public void decideNextStepAfterTurnActions() {
-        if (!canPlayerAct()) return;
+    // 추가된 승리 확인 메소드 - 모든 말이 도착했는지 확인
+    private boolean checkPlayerWin(Player player) {
+        return player.getPieces().stream().allMatch(Piece::isFinished);
+    }
 
+    public void playerEndsTurnActions() { // UI의 "턴 마치기" 버튼과 연결
+        if (!canPlayerAct()) return;
         if (!currentTurnThrows.isEmpty()) {
-            ui.logMessage("남은 윷 결과 [" + currentTurnThrows.stream().map(Enum::name).collect(Collectors.joining(", ")) + "] 사용을 포기하고 턴을 마칩니다.");
+            ui.logMessage("남은 윷 결과 [" + currentTurnThrows.stream().map(Enum::name).collect(Collectors.joining(", ")) + "] 사용 포기.");
             currentTurnThrows.clear();
         }
-
-        if (this.yutOrMoJustThrown) {
+        if (this.yutOrMoEffectFromLastThrow) { // 윷/모 던지고 말 안 움직이고 턴 넘기려 할 때
             this.pendingExtraTurns++;
-            ui.logMessage("마지막 던지기(윷/모)로 인해 추가 던지기 기회가 +1 되었습니다! (총 예약 " + this.pendingExtraTurns + "번)");
-            this.yutOrMoJustThrown = false;
+            ui.logMessage("마지막 윷/모 효과로 추가 던지기 +1! (총 예약 " + this.pendingExtraTurns + "번)");
+            this.yutOrMoEffectFromLastThrow = false;
         }
 
-        if (this.pendingExtraTurns > 0) {
-            this.pendingExtraTurns--;
-            ui.logMessage(game.getCurrentPlayer().getName() + "님, 추가 던지기 기회입니다! (남은 예약: " + this.pendingExtraTurns + "번)");
-            resetForCurrentPlayerTurnSegment(); // 중요: 새 던지기 세트를 위해 초기화
-            ui.enableThrowButtons(true);
-            ui.showActionPanel(false, null, null);
-        } else {
+        if (this.pendingExtraTurns > 0) { // 예약된 추가 턴이 있다면
+            // this.pendingExtraTurns--; // 여기서 소모하지 않고, handleThrowRequest에서 소모
+            ui.logMessage(game.getCurrentPlayer().getName() + "님, 예약된 추가 던지기 기회가 " + this.pendingExtraTurns + "번 있습니다.");
+            startNewThrowSessionForCurrentPlayer();
+        } else { // 추가 턴 없으면 턴 종료
             game.nextTurn();
-            prepareNewTurn(); // 다음 플레이어의 새 턴을 위해 모든 관련 상태 초기화
+            prepareNewTurn();
             ui.logMessage(game.getCurrentPlayer().getName() + " 차례입니다.");
             ui.updateStatusLabel(game.getCurrentPlayer().getName() + " 차례입니다.");
             ui.enableThrowButtons(true);
@@ -209,49 +206,75 @@ public class GameController {
         boolean pieceActuallyMoved = false;
 
         List<Piece> groupToMove = new ArrayList<>();
-        if (originalPos == Position.OFFBOARD) {
-            groupToMove.add(pieceToMove);
-        } else {
+        if (originalPos == Position.OFFBOARD) { 
+            groupToMove.add(pieceToMove); 
+        } else { 
+            // 같은 위치에 있는 같은 플레이어의 말 그룹핑
             for (Piece p : game.getBoard().getPiecesAt(originalPos)) {
-                if (p.getOwner().equals(player)) {
-                    groupToMove.add(p);
+                if (p.getOwner().equals(player)) { 
+                    groupToMove.add(p); 
                 }
             }
         }
+        
         if (groupToMove.isEmpty() && originalPos != Position.OFFBOARD) {
             groupToMove.add(pieceToMove);
         }
 
-        List<Position> path = PathManager.getNextPositions(pieceToMove, yutResult.getMove());
+        List<Position> generatedPath = PathManager.getNextPositions(pieceToMove, yutResult.getMove(), selectedBoardShape);
 
-        if (!path.isEmpty()) {
-            Position destination = path.get(path.size() - 1);
-            // 경로 문맥 업데이트 로직 (Piece의 상태를 변경하므로 신중한 설계 필요)
-            // 예: 말이 CENTER에 진입/이탈 시 Piece의 상태 업데이트
-            for (Position stepPos : path) {
-                if (pieceToMove.getPosition() == Position.CENTER && stepPos != Position.CENTER) { // CENTER를 벗어남
-                    // pieceToMove.setLastMajorNodeBeforeCenter(null); // 또는 다른 로직
+        if (!generatedPath.isEmpty()) {
+            Position destination = generatedPath.get(generatedPath.size() - 1);
+            Position currentPosBeforeBoardPlace = pieceToMove.getPosition(); // Board.placePiece 호출 전 위치
+
+            // 경로 문맥 업데이트 로직 강화
+            // 대표 말(pieceToMove)이 이동한 경로(generatedPath)를 기반으로 문맥 설정
+            Position prevPosInPathForContext = originalPos;
+            for (Position stepInPath : generatedPath) {
+                if (stepInPath == Position.CENTER) { // CENTER에 도달/통과
+                    if (prevPosInPathForContext == Position.DIA_A2 || prevPosInPathForContext == Position.DIA_B2 || 
+                        (prevPosInPathForContext.name().startsWith("DIA_") && prevPosInPathForContext.name().endsWith("2"))) {
+                        pieceToMove.setPathContextWaypoint(prevPosInPathForContext);
+                    }
+                } else if (stepInPath.name().startsWith("DIA_") && stepInPath.name().endsWith("3") && 
+                           prevPosInPathForContext == Position.CENTER) {
+                    // CENTER -> DIA_X3 : 해당 문맥 유지 (모든 보드 형태 지원)
+                    char diagPath = stepInPath.name().charAt(4); // "DIA_X3"에서 X 추출
+                    Position contextPos = Position.valueOf("DIA_" + diagPath + "2");
+                    pieceToMove.setPathContextWaypoint(contextPos);
+                } else if (prevPosInPathForContext == Position.CENTER) {
+                    // CENTER -> 다른 경로 진입: 문맥을 CENTER로 설정
+                    pieceToMove.setPathContextWaypoint(Position.CENTER);
                 }
-                if (stepPos == Position.DIA_A2 || stepPos == Position.DIA_B2) {
-                    pieceToMove.setLastMajorNodeBeforeCenter(stepPos);
-                } else if (stepPos == Position.CENTER && PathManager.DIAG_A_TO_B.get(0) == Position.CENTER) {
-                    pieceToMove.setLastMajorNodeBeforeCenter(Position.CENTER);
+                // 특정 지름길 출구에 도달했을 때도 문맥 유지 필요
+                else if (prevPosInPathForContext.name().startsWith("DIA_") && 
+                         prevPosInPathForContext.name().endsWith("4")) {
+                    // 지름길 출구를 통해 나가는 경우
+                    char diagPath = prevPosInPathForContext.name().charAt(4); // "DIA_X4"에서 X 추출
+                    pieceToMove.setPathContextWaypoint(Position.valueOf("DIA_" + diagPath + "4"));
                 }
+                // 일반 외곽 경로로 나가는 경우 문맥 초기화
+                else if (stepInPath.name().startsWith("POS_") && 
+                        !prevPosInPathForContext.name().startsWith("POS_")) {
+                    // 지름길에서 외곽으로 나가는 경우
+                    pieceToMove.clearPathContext();
+                }
+                
+                prevPosInPathForContext = stepInPath;
             }
 
-
+            // 그룹 이동 및 상대 말 잡기
             for (Piece pInGroup : groupToMove) {
                 if (game.getBoard().placePiece(pInGroup, destination)) {
                     captured = true;
                 }
             }
 
-            if (pieceToMove.getPosition() != originalPos || pieceToMove.getPosition() == Position.END) {
+            if (pieceToMove.getPosition() != currentPosBeforeBoardPlace || pieceToMove.getPosition() == Position.END) {
                 pieceActuallyMoved = true;
             }
 
             if (pieceActuallyMoved) {
-                // String.format() 대신 문자열 연결 사용
                 String logMsg = player.getName() + "님의 말 " + groupToMove.size() + "개 (" +
                         pieceToMove.getOwner().getName() + ") " + originalPos.name() +
                         " → " + destination.name() + " (" + yutResult.name() + ")";
@@ -262,9 +285,13 @@ public class GameController {
         }
         return new MoveOutcome(pieceActuallyMoved, captured);
     }
+    
+    public BoardShape getShape() { 
+        return selectedBoardShape; 
+    }
 
     private boolean canPlayerAct() {
-        return game != null && game.getCurrentPlayer() != null && (game.checkWin(game.getCurrentPlayer()) == false);
+        return game != null && game.getCurrentPlayer() != null && (!checkPlayerWin(game.getCurrentPlayer()));
     }
 
     public List<YutThrowResult> getCurrentAvailableThrows() {

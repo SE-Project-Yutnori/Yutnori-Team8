@@ -3,12 +3,9 @@ package backend.model;
 
 import java.util.*;
 
-/**
- * 말 배치·이동·잡기·업기·골인 관리
- */
 public class Board {
     private final Map<Position, List<Piece>> boardMap = new HashMap<>();
-    private final List<Piece> finishedPieces     = new ArrayList<>();
+    private final List<Piece> finishedPieces = new ArrayList<>();
 
     public Board() {
         for (Position p : Position.values()) {
@@ -16,64 +13,62 @@ public class Board {
         }
     }
 
-    /** 해당 칸의 말 목록 */
     public List<Piece> getPiecesAt(Position pos) {
-        return boardMap.get(pos);
+        // Position.OFFBOARD나 Position.END에 대한 요청이 올 경우 빈 리스트 반환 또는 예외 처리
+        if (pos == Position.OFFBOARD || pos == Position.END) {
+            return Collections.emptyList(); // 또는 다른 적절한 처리
+        }
+        return boardMap.getOrDefault(pos, Collections.emptyList());
     }
 
-    /** 완전 골인한 말 목록 (읽기 전용) */
     public List<Piece> getFinishedPieces() {
         return Collections.unmodifiableList(finishedPieces);
     }
 
-    /**
-     * 말 이동
-     *  - OFFBOARD → 단순 이동
-     *  - 그 외 모든 칸 → 잡기 처리
-     *  - END → finishedPieces 로 이동
-     *
-     * @return 잡기(capture)가 발생했으면 true
-     */
     public boolean placePiece(Piece pc, Position dest) {
-        // 1) 이전 위치에서 제거
-        removePiece(pc);
+        removePiece(pc); // 현재 위치에서 제거
 
-        // 2) END에 도달하면 완전 골인 처리 (잡기 없음)
         if (dest == Position.END) {
-            finishedPieces.add(pc);
-            pc.moveTo(dest);
-            return false;
+            if (!finishedPieces.contains(pc)) { // 중복 추가 방지
+                finishedPieces.add(pc);
+            }
+            pc.moveTo(dest); // Piece 내부에서 END 도착 시 경로 문맥 초기화됨
+            return false; // 잡기 없음
         }
 
         boolean captured = false;
-
-        // 3) OFFBOARD 가 아니고 END 도 아니면, 무조건 잡기
-        if (dest != Position.OFFBOARD) {
-            // dest 칸에 있는 모든 상대 말 잡아서 OFFBOARD 로 돌려보냄
+        if (dest != Position.OFFBOARD) { // 목적지가 판 위인 경우
+            List<Piece> piecesAtDestination = boardMap.getOrDefault(dest, new ArrayList<>());
             List<Piece> toCapture = new ArrayList<>();
-            for (Piece p : boardMap.get(dest)) {
-                if (!p.getOwner().equals(pc.getOwner())) {
-                    toCapture.add(p);
+            for (Piece existingPiece : piecesAtDestination) {
+                if (!existingPiece.getOwner().equals(pc.getOwner())) {
+                    toCapture.add(existingPiece);
                 }
             }
-            for (Piece p : toCapture) {
-                boardMap.get(dest).remove(p);
-                boardMap.get(Position.OFFBOARD).add(p);  // OFFBOARD 로
-                p.moveTo(Position.OFFBOARD);
+            for (Piece capturedPiece : toCapture) {
+                piecesAtDestination.remove(capturedPiece); // 목적지에서 제거
+                // boardMap.get(Position.OFFBOARD)는 없으므로, 잡힌 말은 단순히 위치만 변경
+                capturedPiece.moveTo(Position.OFFBOARD); // Piece 내부에서 OFFBOARD 이동 시 경로 문맥 초기화됨
                 captured = true;
             }
         }
 
-        // 4) 목적지에 말 배치
-        boardMap.get(dest).add(pc);
-        pc.moveTo(dest);
+        // 새로운 목적지에 말 배치 (OFFBOARD는 boardMap에 없음)
+        if (dest != Position.OFFBOARD) {
+            boardMap.computeIfAbsent(dest, k -> new ArrayList<>()).add(pc);
+        }
+        pc.moveTo(dest); // Piece의 현재 위치 업데이트
+        // pc의 경로 문맥 업데이트는 GameController.movePiece에서 이동 후 처리
+
         return captured;
     }
 
-    /** 모든 칸에서 해당 말을 제거 */
     public void removePiece(Piece pc) {
-        for (List<Piece> list : boardMap.values()) {
-            list.remove(pc);
+        Position currentPos = pc.getPosition();
+        if (currentPos != null && currentPos != Position.OFFBOARD && currentPos != Position.END && boardMap.containsKey(currentPos)) {
+            boardMap.get(currentPos).remove(pc);
         }
+        // finishedPieces에서도 제거해야 할 수 있음 (규칙에 따라)
+        // finishedPieces.remove(pc);
     }
 }
