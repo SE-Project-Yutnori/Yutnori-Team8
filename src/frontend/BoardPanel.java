@@ -11,6 +11,7 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.RenderingHints;
+import java.awt.geom.AffineTransform;
 import java.awt.geom.Path2D;
 import java.awt.BasicStroke;
 import java.awt.Color;
@@ -342,6 +343,59 @@ public class BoardPanel extends JPanel {
                 }
             }
         }
+        drawDirectionArrows(g2d);
+    }
+    
+    private void drawDirectionArrows(Graphics2D g2d) {
+        g2d.setColor(new Color(0, 100, 0)); // 진한 녹색 화살표
+        g2d.setStroke(new BasicStroke(2.0f));
+        
+        // 시작 위치와 다음 위치를 가져옴
+        Point start = coords.get(Position.POS_0);
+        Point next = coords.get(Position.POS_1);
+        
+        if (start != null && next != null) {
+            // 화살표 그리기
+            drawArrow(g2d, start, next);
+        }
+    }
+    
+    private void drawArrow(Graphics2D g2d, Point from, Point to) {
+        if (from == null || to == null) return;
+        
+        // 화살표 길이와 방향 계산
+        int dx = to.x - from.x;
+        int dy = to.y - from.y;
+        double length = Math.sqrt(dx * dx + dy * dy);
+        
+        // 화살표 축소 (시작과 끝 노드 사이에 딱 맞게)
+        double scaleFactor = 0.7; // 화살표 길이 비율
+        int arrowX = from.x + (int)(dx * scaleFactor);
+        int arrowY = from.y + (int)(dy * scaleFactor);
+        
+        // 화살표 머리 크기
+        int arrowSize = 10;
+        
+        // 화살표 방향 각도
+        double angle = Math.atan2(dy, dx);
+        
+        // 화살표 몸통 그리기
+        g2d.drawLine(from.x, from.y, arrowX, arrowY);
+        
+        // 화살표 머리 그리기
+        AffineTransform tx = g2d.getTransform();
+        g2d.translate(arrowX, arrowY);
+        g2d.rotate(angle);
+        
+        // 삼각형 화살표 머리
+        Path2D arrowHead = new Path2D.Double();
+        arrowHead.moveTo(0, 0);
+        arrowHead.lineTo(-arrowSize, -arrowSize/2);
+        arrowHead.lineTo(-arrowSize, arrowSize/2);
+        arrowHead.closePath();
+        
+        g2d.fill(arrowHead);
+        g2d.setTransform(tx);
     }
     
     private void drawOuterPathTraditional(Graphics2D g2d) {

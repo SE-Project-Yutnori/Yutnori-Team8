@@ -8,27 +8,6 @@ import java.util.List;
 import java.util.Map;
 
 public class PathManager {
-
-    public static final List<Position> OUTER = List.of(
-            Position.POS_0,  Position.POS_1,  Position.POS_2,  Position.POS_3,  Position.POS_4,
-            Position.POS_5,  Position.POS_6,  Position.POS_7,  Position.POS_8,  Position.POS_9,
-            Position.POS_10, Position.POS_11, Position.POS_12, Position.POS_13, Position.POS_14,
-            Position.POS_15, Position.POS_16, Position.POS_17, Position.POS_18, Position.POS_19
-    );
-
-    public static final List<Position> DIAG_A_FULL = List.of(
-            Position.POS_5,  Position.DIA_A1, Position.DIA_A2, Position.CENTER,
-            Position.DIA_A3, Position.DIA_A4, Position.POS_15
-    );
-
-    public static final List<Position> DIAG_B_FULL = List.of(
-            Position.POS_10, Position.DIA_B1, Position.DIA_B2, Position.CENTER,
-            Position.DIA_B3, Position.DIA_B4, Position.POS_0
-    );
-
-    public static final List<Position> DIAG_A_TO_B = List.of(
-            Position.CENTER, Position.DIA_B3, Position.DIA_B4, Position.POS_0
-    );
     
     private static final Map<BoardShape, Map<Character, Position>> DIAG_ENDPOINTS = new HashMap<>();
 
@@ -47,6 +26,16 @@ public class PathManager {
             return path;
         }
 
+        // POS_0 처리는 forward/backward 로직 전에 수행
+        if (cur == Position.POS_0) {
+            // steps >= 1인 경우에만 END로 처리
+            if (steps >= 1) {
+                path.add(Position.END);
+                return path;
+            }
+            // 후진하는 경우는 일반 로직으로 처리
+        }
+
         if (steps < 0) return backward(cur, -steps, ctx, outer, shape);
         else return forward(cur, steps, ctx, outer, shape);
     }
@@ -57,14 +46,21 @@ public class PathManager {
         List<Position> out = new ArrayList<>();
         // 1) CENTER에서 후진
         if (cur == Position.CENTER) {
-            char d = chooseDiag(ctx, shape.getDiagNames(), true, shape);
-            List<Position> diag = shape.getDiagPath(d);
-            int idx = diag.indexOf(cur) - steps;
-            if (idx >= 0) out.add(diag.get(idx));
-            else {
+        	char diagChar = findDiagFromContext(ctx, shape);
+            System.out.println("DEBUG - Selected diag for backward: " + diagChar);
+            
+            List<Position> diag = shape.getDiagPath(diagChar);
+            int centerIdx = diag.indexOf(Position.CENTER);
+            int idx = centerIdx - steps;
+            
+            // 컨텍스트 정보가 있으면 해당 지름길로 나가야 함
+            if (idx >= 0) {
+                out.add(diag.get(idx));
+            } else {
+                // 지름길 시작점을 넘어서 후진하는 경우
                 int entry = outer.indexOf(diag.get(0));
-                int off   = -idx;
-                int oidx  = (entry - off % outer.size() + outer.size()) % outer.size();
+                int off = -idx;
+                int oidx = (entry - off % outer.size() + outer.size()) % outer.size();
                 out.add(outer.get(oidx));
             }
             return out;
@@ -100,6 +96,8 @@ public class PathManager {
                                          Position ctx, List<Position> outer,
                                          BoardShape shape) {
         List<Position> out = new ArrayList<>();
+        
+        // POS_0 처리는 getNextPositions 메서드로 이동했으므로 여기서 제거
         
         // 1) CENTER 앞으로
         if (cur == Position.CENTER) {
@@ -169,10 +167,10 @@ public class PathManager {
             return out;
         }
         
-        // 2. 지름길 끝이 END인 경우 (특히 B 경로)
+        // 2. 지름길 끝이 POS_0인 경우
         Position exit = seq.get(limit - 1);
-        if (exit == Position.END) {
-            out.add(Position.END);
+        if (exit == Position.POS_0) {
+            out.add(Position.POS_0);
             return out;
         }
         
@@ -200,32 +198,68 @@ public class PathManager {
         return out;
     }
     
+    private static char findDiagFromContext(Position ctx, BoardShape shape) {
+        // 1. 컨텍스트가 직접 지름길 위치인 경우 (DIA_X2 처럼)
+        if (ctx != null && ctx.name().startsWith("DIA_")) {
+            char pathChar = ctx.name().charAt(4);  // DIA_X2에서 X 추출
+            // 유효한 지름길 문자인지 확인
+            if (shape.getDiagNames().contains(pathChar)) {
+                return pathChar;
+            }
+        }
+        
+        // 2. 컨텍스트가 다른 지름길에 속하는지 확인
+        if (ctx != null) {
+            for (char c : shape.getDiagNames()) {
+                List<Position> diag = shape.getDiagPath(c);
+                if (diag.contains(ctx)) {
+                    return c;
+                }
+            }
+        }
+        
+        // 3. 컨텍스트가 없거나 유효하지 않은 경우, 기본값 사용
+        // 이 부분이 중요! 후진 시에는 getDefaultCenterExitPath()를 사용하지 않고
+        // END까지 거리가 가장 짧은 지름길을 선택
+        List<Character> sorted = new ArrayList<>(shape.getDiagNames());
+        sorted.sort(Comparator.comparingInt(c -> getDistanceToEnd(c, shape)));
+        return sorted.get(0);
+    }
+    
     private static char chooseDiag(Position ctx,
                                   List<Character> diags,
-                                  boolean isStop,
+                                  boolean isBackward,
                                   BoardShape shape) {
         // 이전 경로 컨텍스트가 있으면 해당 경로 유지
-    	if (ctx != null) {
+        if (ctx != null) {
+            // 직접적으로 지름길 위치에서 온 경우
+            if (ctx.name().startsWith("DIA_")) {
+                char pathChar = ctx.name().charAt(4);  // DIA_X2에서 X 추출
+                // 해당 문자가 유효한 지름길 이름인지 확인
+                if (diags.contains(pathChar)) {
+                    return pathChar;
+                }
+            }
+            
+            // ctx 위치가 특정 지름길에 속하는지 확인
             for (char c : diags) {
-                if (ctx.name().contains("DIA_" + c)) return c;
-                // CENTER에서 이동 중이고, 이전에 특정 지름길에서 왔다면 해당 경로 유지
-                if (ctx == Position.DIA_A2 || ctx == Position.DIA_B2 || ctx == Position.DIA_C2) {
-                    return ctx.name().charAt(4); // DIA_X2에서 X 추출
+                List<Position> diag = shape.getDiagPath(c);
+                if (diag.contains(ctx)) {
+                    return c;  // 해당 지름길 사용
                 }
             }
         }
     	
-    	if (!isStop) {
+        if (isBackward) {
+            // 컨텍스트가 없는 경우, END까지 거리가 가장 짧은 경로 선택 (기존 로직 유지)
+            List<Character> sorted = new ArrayList<>(diags);
+            sorted.sort(Comparator.comparingInt(c -> getDistanceToEnd(c, shape)));
+            return sorted.get(0);
+        } else {
+            // 앞으로 가는 경우 - 보드 형태별 기본 경로 사용
             return shape.getDefaultCenterExitPath();
         }
         
-        // 경로 선택: END까지 거리 기준으로 정렬
-        List<Character> sorted = new ArrayList<>(diags);
-        sorted.sort(Comparator.comparingInt(c -> getDistanceToEnd(c, shape)));
-        
-        // isStop이 false면 가장 짧은 경로 선택 (sorted.get(0))
-        // isStop이 true이고 선택지가 여러 개면 두 번째로 짧은 경로 선택 (sorted.get(1))
-        return sorted.get(0);
     }
     
     private static int getDistanceToEnd(char diag, BoardShape shape) {
@@ -240,7 +274,7 @@ public class PathManager {
         }
         
         Position endpoint = endpoints.get(diag);
-        if (endpoint == Position.END) return 0;
+        if (endpoint == Position.POS_0) return 0;
         
         // Calculate distance
         List<Position> outer = shape.getOuterPath();

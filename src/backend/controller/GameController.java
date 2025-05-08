@@ -199,11 +199,86 @@ public class GameController {
             ui.showActionPanel(false, null, null);
         }
     }
+    
+    private void updatePathContext(Piece piece, Position originalPos, List<Position> path) {
+        // 경로가 비어있으면 아무것도 하지 않음
+        if (path.isEmpty()) return;
+        
+        Position prevPos = originalPos;
+        
+        for (Position currentPos : path) {
+            // CENTER로 진입하는 경우
+            if (currentPos == Position.CENTER) {
+                // 어느 지름길에서 왔는지 기록
+                if (prevPos.name().startsWith("DIA_")) {
+                    piece.setPathContextWaypoint(prevPos);
+                }
+            }
+            // CENTER에서 나가는 경우
+            else if (prevPos == Position.CENTER) {
+                // 어느 지름길로 나가는지 확인하고 컨텍스트 유지
+                if (currentPos.name().startsWith("DIA_")) {
+                    char diagPath = currentPos.name().charAt(4); // DIA_X#에서 X 추출
+                    // 해당 지름길의 중간 지점 위치를 컨텍스트로 설정
+                    // (지름길 A의 경우 DIA_A2 등)
+                    try {
+                        Position contextPos = Position.valueOf("DIA_" + diagPath + "2");
+                        piece.setPathContextWaypoint(contextPos);
+                    } catch (IllegalArgumentException e) {
+                        // 예상 포지션 이름이 없는 경우 CENTER를 컨텍스트로 설정
+                        piece.setPathContextWaypoint(Position.CENTER);
+                    }
+                } else {
+                    // CENTER에서 외곽 경로로 나가는 경우 CENTER를 컨텍스트로 저장
+                    piece.setPathContextWaypoint(Position.CENTER);
+                }
+            }
+            // 지름길 내부 이동
+            else if (prevPos.name().startsWith("DIA_") && currentPos.name().startsWith("DIA_")) {
+                char prevDiag = prevPos.name().charAt(4);
+                char currDiag = currentPos.name().charAt(4);
+                
+                // 같은 지름길 내 이동 - 컨텍스트 유지
+                if (prevDiag == currDiag) {
+                    // 지름길 중간 지점을 컨텍스트로 설정
+                    try {
+                        Position contextPos = Position.valueOf("DIA_" + prevDiag + "2");
+                        piece.setPathContextWaypoint(contextPos);
+                    } catch (IllegalArgumentException e) {
+                        // 안전장치
+                        piece.setPathContextWaypoint(prevPos);
+                    }
+                }
+            }
+            // 지름길에서 외곽으로 나가는 경우
+            else if (prevPos.name().startsWith("DIA_") && currentPos.name().startsWith("POS_")) {
+                // 지름길 출구를 컨텍스트로 저장
+                piece.setPathContextWaypoint(prevPos);
+            }
+            // 외곽 경로 이동
+            else if (currentPos.name().startsWith("POS_")) {
+                // 일반 외곽 경로 이동 시 컨텍스트 초기화 (필요한 경우)
+                if (!prevPos.name().startsWith("DIA_")) {
+                    piece.clearPathContext();
+                }
+            }
+            
+            prevPos = currentPos;
+        }
+        
+        // 목적지가 최종 종료(END)인 경우 컨텍스트 초기화
+        if (path.get(path.size() - 1) == Position.END) {
+            piece.clearPathContext();
+        }
+    }
 
     private MoveOutcome movePiece(Player player, Piece pieceToMove, YutThrowResult yutResult) {
         Position originalPos = pieceToMove.getPosition();
         boolean captured = false;
         boolean pieceActuallyMoved = false;
+
+        // 현재 경로 컨텍스트 저장 (이동 전)
+        Position originalContext = pieceToMove.getPathContextWaypoint();
 
         List<Piece> groupToMove = new ArrayList<>();
         if (originalPos == Position.OFFBOARD) { 
@@ -227,44 +302,16 @@ public class GameController {
             Position destination = generatedPath.get(generatedPath.size() - 1);
             Position currentPosBeforeBoardPlace = pieceToMove.getPosition(); // Board.placePiece 호출 전 위치
 
-            // 경로 문맥 업데이트 로직 강화
-            // 대표 말(pieceToMove)이 이동한 경로(generatedPath)를 기반으로 문맥 설정
-            Position prevPosInPathForContext = originalPos;
-            for (Position stepInPath : generatedPath) {
-                if (stepInPath == Position.CENTER) { // CENTER에 도달/통과
-                    if (prevPosInPathForContext == Position.DIA_A2 || prevPosInPathForContext == Position.DIA_B2 || 
-                        (prevPosInPathForContext.name().startsWith("DIA_") && prevPosInPathForContext.name().endsWith("2"))) {
-                        pieceToMove.setPathContextWaypoint(prevPosInPathForContext);
-                    }
-                } else if (stepInPath.name().startsWith("DIA_") && stepInPath.name().endsWith("3") && 
-                           prevPosInPathForContext == Position.CENTER) {
-                    // CENTER -> DIA_X3 : 해당 문맥 유지 (모든 보드 형태 지원)
-                    char diagPath = stepInPath.name().charAt(4); // "DIA_X3"에서 X 추출
-                    Position contextPos = Position.valueOf("DIA_" + diagPath + "2");
-                    pieceToMove.setPathContextWaypoint(contextPos);
-                } else if (prevPosInPathForContext == Position.CENTER) {
-                    // CENTER -> 다른 경로 진입: 문맥을 CENTER로 설정
-                    pieceToMove.setPathContextWaypoint(Position.CENTER);
-                }
-                // 특정 지름길 출구에 도달했을 때도 문맥 유지 필요
-                else if (prevPosInPathForContext.name().startsWith("DIA_") && 
-                         prevPosInPathForContext.name().endsWith("4")) {
-                    // 지름길 출구를 통해 나가는 경우
-                    char diagPath = prevPosInPathForContext.name().charAt(4); // "DIA_X4"에서 X 추출
-                    pieceToMove.setPathContextWaypoint(Position.valueOf("DIA_" + diagPath + "4"));
-                }
-                // 일반 외곽 경로로 나가는 경우 문맥 초기화
-                else if (stepInPath.name().startsWith("POS_") && 
-                        !prevPosInPathForContext.name().startsWith("POS_")) {
-                    // 지름길에서 외곽으로 나가는 경우
-                    pieceToMove.clearPathContext();
-                }
-                
-                prevPosInPathForContext = stepInPath;
-            }
+            // 경로 컨텍스트 업데이트 로직 개선
+            updatePathContext(pieceToMove, originalPos, generatedPath);
 
             // 그룹 이동 및 상대 말 잡기
             for (Piece pInGroup : groupToMove) {
+                // 그룹 내 다른 말들도 동일한 경로 컨텍스트 공유
+                if (pInGroup != pieceToMove) {
+                    pInGroup.setPathContextWaypoint(pieceToMove.getPathContextWaypoint());
+                }
+                
                 if (game.getBoard().placePiece(pInGroup, destination)) {
                     captured = true;
                 }
@@ -278,6 +325,11 @@ public class GameController {
                 String logMsg = player.getName() + "님의 말 " + groupToMove.size() + "개 (" +
                         pieceToMove.getOwner().getName() + ") " + originalPos.name() +
                         " → " + destination.name() + " (" + yutResult.name() + ")";
+                if (originalContext != pieceToMove.getPathContextWaypoint()) {
+                    logMsg += " [경로 컨텍스트: " + 
+                        (pieceToMove.getPathContextWaypoint() != null ? 
+                        pieceToMove.getPathContextWaypoint().name() : "없음") + "]";
+                }
                 ui.logMessage(logMsg);
             }
         } else {

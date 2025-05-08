@@ -47,7 +47,7 @@ public enum BoardShape {
                         Position.DIA_B1, Position.DIA_B2,
                         Position.CENTER,
                         Position.DIA_B3, Position.DIA_B4,
-                        Position.END
+                        Position.POS_0
                 );
             }
         } else if (this == PENTAGON) {
@@ -119,7 +119,7 @@ public enum BoardShape {
                             Position.valueOf("DIA_C1"), Position.valueOf("DIA_C2"),
                             Position.CENTER,
                             Position.valueOf("DIA_C3"), Position.valueOf("DIA_C4"),
-                            Position.END
+                            Position.POS_0
                     );
                 default:
                     // 나머지 대각선(D, E, F)은 기본 계산 방식 사용
