@@ -216,7 +216,12 @@ public class PathManager {
         // 2. 지름길 끝이 POS_0인 경우
         Position exit = seq.get(limit - 1);
         if (exit == Position.POS_0) {
-            out.add(Position.POS_0);
+            if (idx == limit - 1) {
+                out.add(Position.POS_0);
+            } else {
+                // 초과(over)인 경우 바로 END
+                out.add(Position.END);
+            }
             return out;
         }
         
