@@ -14,8 +14,11 @@ public class PathManager {
     public static List<Position> getNextPositions(Piece piece, int steps, BoardShape shape) {
         Position cur = piece.getPosition();
         Position ctx = piece.getPathContextWaypoint();
+        Position fallbackCtx = piece.getLastEnteredWaypoint();
         List<Position> outer = shape.getOuterPath();
         List<Position> path = new ArrayList<>();
+
+        System.out.println("DEBUG - Current position: " + cur + ", Context: " + ctx + ", Steps: " + steps);
 
         // Early exit conditions
         if (steps == 0) return path;
@@ -26,45 +29,71 @@ public class PathManager {
             return path;
         }
 
-        // POS_0 처리는 forward/backward 로직 전에 수행
+        // POS_0 처리
         if (cur == Position.POS_0) {
-            // steps >= 1인 경우에만 END로 처리
-            if (steps >= 1) {
+            if (steps > 0) {
+                // 앞으로 가는 경우 - 종료 위치로
                 path.add(Position.END);
                 return path;
+            } else {
+                // 후진하는 경우 - outer path로 이동
+                int targetIdx = (outer.size() - (-steps) % outer.size()) % outer.size();
+                path.add(outer.get(targetIdx));
+                return path;
             }
-            // 후진하는 경우는 일반 로직으로 처리
         }
 
-        if (steps < 0) return backward(cur, -steps, ctx, outer, shape);
+        if (steps < 0) return backward(cur, -steps, ctx, fallbackCtx, outer, shape);
         else return forward(cur, steps, ctx, outer, shape);
     }
 
     private static List<Position> backward(Position cur, int steps,
-                                          Position ctx, List<Position> outer,
+                                          Position ctx,Position fallbackCtx, List<Position> outer,
                                           BoardShape shape) {
         List<Position> out = new ArrayList<>();
+        System.out.println("DEBUG - Current position: " + cur + ", Context: " + ctx + ", Steps: " + steps);
         // 1) CENTER에서 후진
         if (cur == Position.CENTER) {
-        	char diagChar = findDiagFromContext(ctx, shape);
+            // 컨텍스트에 기반한 지름길 찾기 - 어느 지름길로 들어왔는지 정보를 사용
+            char diagChar = findDiagFromContext(cur,ctx,fallbackCtx, shape);
             System.out.println("DEBUG - Selected diag for backward: " + diagChar);
             
             List<Position> diag = shape.getDiagPath(diagChar);
             int centerIdx = diag.indexOf(Position.CENTER);
-            int idx = centerIdx - steps;
             
-            // 컨텍스트 정보가 있으면 해당 지름길로 나가야 함
-            if (idx >= 0) {
-                out.add(diag.get(idx));
+            // centerIdx는 항상 찾아져야 함 (지름길은 항상 CENTER를 포함하기 때문)
+            if (centerIdx != -1) {
+                int idx = centerIdx - steps;
+                
+                if (idx >= 0) {
+                    // 지름길 내에서 후진 가능
+                    out.add(diag.get(idx));
+                } else {
+                    // 지름길 시작점을 넘어서 후진하는 경우
+                    int entry = outer.indexOf(diag.get(0));
+                    int off = -idx;
+                    int oidx = (entry - off % outer.size() + outer.size()) % outer.size();
+                    out.add(outer.get(oidx));
+                }
             } else {
-                // 지름길 시작점을 넘어서 후진하는 경우
-                int entry = outer.indexOf(diag.get(0));
-                int off = -idx;
-                int oidx = (entry - off % outer.size() + outer.size()) % outer.size();
-                out.add(outer.get(oidx));
+                // 이런 경우는 없어야 하지만, 안전을 위한 예외 처리
+                char defaultDiag = chooseDiag(ctx, shape.getDiagNames(), true, shape);
+                List<Position> defaultPath = shape.getDiagPath(defaultDiag);
+                centerIdx = defaultPath.indexOf(Position.CENTER);
+                int idx = centerIdx - steps;
+                
+                if (idx >= 0) {
+                    out.add(defaultPath.get(idx));
+                } else {
+                    int entry = outer.indexOf(defaultPath.get(0));
+                    int off = -idx;
+                    int oidx = (entry - off % outer.size() + outer.size()) % outer.size();
+                    out.add(outer.get(oidx));
+                }
             }
             return out;
         }
+        
         // 2) diag 내부 후진
         for (char c : shape.getDiagNames()) {
             List<Position> diag = shape.getDiagPath(c);
@@ -97,8 +126,6 @@ public class PathManager {
                                          BoardShape shape) {
         List<Position> out = new ArrayList<>();
         
-        // POS_0 처리는 getNextPositions 메서드로 이동했으므로 여기서 제거
-        
         // 1) CENTER 앞으로
         if (cur == Position.CENTER) {
             // 모든 보드 형태에서는 도착점(END)으로 가는 최단 경로를 선택
@@ -111,7 +138,18 @@ public class PathManager {
         // 2) outer→diag 입구 (지름길 시작점에 있는 경우)
         for (char c : shape.getDiagNames()) {
             List<Position> diag = shape.getDiagPath(c);
-            if (diag.get(0) == cur) return advanceWithPathCheck(diag, steps, outer, shape);
+            if (diag.get(0) == cur) {
+                // 지름길 입구에서 CENTER까지의 이동 - 다음 이동을 위한 컨텍스트가 필요
+                // 따라서 여기에서 반환되는 위치에 대한 컨텍스트를 함께 설정해야 함
+                Position result = advanceWithPathCheck(diag, steps, outer, shape).get(0);
+                // 결과가 CENTER면 다음 후진을 위해 컨텍스트를 저장할 수 있도록 특별한 표시가 필요함
+                // 이 정보는 디버깅 출력일 뿐이며, 실제로는 별도의 메서드를 통해 Piece 객체에 저장해야 함
+                if (result == Position.CENTER) {
+                    System.out.println("DEBUG - CENTER reached from diagonal " + c + " - Set context to " + cur);
+                    // 컨텍스트 설정은 호출자가 처리해야 함
+                }
+                return List.of(result);
+            }
         }
         
         // 3) diag 내부 앞으로 (지름길 안에 있는 경우)
@@ -124,7 +162,14 @@ public class PathManager {
                     out.add(Position.END);
                     return out;
                 }
-                return advanceWithPathCheck(diag, idx + steps, outer, shape);
+                
+                Position result = advanceWithPathCheck(diag, idx + steps, outer, shape).get(0);
+                // 결과가 CENTER면 컨텍스트를 설정
+                if (result == Position.CENTER) {
+                    System.out.println("DEBUG - CENTER reached from diagonal position " + cur + " - Set context to diagonal " + c);
+                    // 컨텍스트 설정은 호출자가 처리해야 함
+                }
+                return List.of(result);
             }
         }
         
@@ -135,9 +180,10 @@ public class PathManager {
             
             // 지름길 입구에 정확히 도착하는 경우
             for (char c : shape.getDiagNames()) {
-                int eIdx = outer.indexOf(shape.getDiagPath(c).get(0));
+                List<Position> diag = shape.getDiagPath(c);
+                int eIdx = outer.indexOf(diag.get(0));
                 if (dest == eIdx) {
-                    out.add(shape.getDiagPath(c).get(0));
+                    out.add(diag.get(0));
                     return out;
                 }
             }
@@ -198,33 +244,94 @@ public class PathManager {
         return out;
     }
     
-    private static char findDiagFromContext(Position ctx, BoardShape shape) {
-        // 1. 컨텍스트가 직접 지름길 위치인 경우 (DIA_X2 처럼)
-        if (ctx != null && ctx.name().startsWith("DIA_")) {
-            char pathChar = ctx.name().charAt(4);  // DIA_X2에서 X 추출
-            // 유효한 지름길 문자인지 확인
-            if (shape.getDiagNames().contains(pathChar)) {
-                return pathChar;
-            }
-        }
+    private static char findDiagFromContext(Position cur, Position ctx, Position fallbackCtx, BoardShape shape) {
+        System.out.println("DEBUG - Finding diagonal from context: " + ctx);
         
-        // 2. 컨텍스트가 다른 지름길에 속하는지 확인
+        // 1. Try current context first
         if (ctx != null) {
+            // Check if the context is a diagonal position (DIA_X2)
+            if (ctx.name().startsWith("DIA_")) {
+                char pathChar = ctx.name().charAt(4);  // DIA_X2에서 X 추출
+                if (shape.getDiagNames().contains(pathChar)) {
+                    System.out.println("DEBUG - Found diagonal character from context name: " + pathChar);
+                    return pathChar;
+                }
+            }
+            
+            // Check if context belongs to a diagonal path
             for (char c : shape.getDiagNames()) {
                 List<Position> diag = shape.getDiagPath(c);
                 if (diag.contains(ctx)) {
+                    System.out.println("DEBUG - Found diagonal character from context position: " + c);
                     return c;
+                }
+            }
+            
+            // Check if context is a diagonal entrance
+            for (char c : shape.getDiagNames()) {
+                if (ctx == shape.getDiagPath(c).get(0)) {
+                    System.out.println("DEBUG - Context is diagonal entrance for: " + c);
+                    return c;
+                }
+            }
+            
+            // If context is an outer path position, infer diagonal
+            if (ctx.name().startsWith("POS_")) {
+                // Special case for specific positions that are entries to diagonals
+                switch (ctx.name()) {
+                    case "POS_5":
+                        System.out.println("DEBUG - Inferred diagonal A from POS_5");
+                        return 'A';
+                    case "POS_10":
+                        System.out.println("DEBUG - Inferred diagonal B from POS_10");
+                        return 'B';
+                    case "POS_15":
+                        System.out.println("DEBUG - Inferred diagonal C from POS_15");
+                        return 'C';
+                    // Add other cases as needed
                 }
             }
         }
         
-        // 3. 컨텍스트가 없거나 유효하지 않은 경우, 기본값 사용
-        // 이 부분이 중요! 후진 시에는 getDefaultCenterExitPath()를 사용하지 않고
-        // END까지 거리가 가장 짧은 지름길을 선택
-        List<Character> sorted = new ArrayList<>(shape.getDiagNames());
-        sorted.sort(Comparator.comparingInt(c -> getDistanceToEnd(c, shape)));
-        return sorted.get(0);
+        // 2. Try fallback context if available
+        if (fallbackCtx != null) {
+            // Repeat similar checks with fallback context
+            if (fallbackCtx.name().startsWith("DIA_")) {
+                char pathChar = fallbackCtx.name().charAt(4);
+                if (shape.getDiagNames().contains(pathChar)) {
+                    System.out.println("DEBUG - Found diagonal from fallback context name: " + pathChar);
+                    return pathChar;
+                }
+            }
+            
+            for (char c : shape.getDiagNames()) {
+                List<Position> diag = shape.getDiagPath(c);
+                if (diag.contains(fallbackCtx)) {
+                    System.out.println("DEBUG - Found diagonal from fallback context: " + c);
+                    return c;
+                }
+            }
+            
+            // Infer from fallback positions
+            if (fallbackCtx.name().startsWith("POS_")) {
+                switch (fallbackCtx.name()) {
+                    case "POS_5":
+                        return 'A';
+                    case "POS_10":
+                        return 'B';
+                    case "POS_15":
+                        return 'C';
+                    // Add other cases as needed
+                }
+            }
+        }
+        
+        // 3. Default: Use the board's default center exit path
+        char defaultDiag = shape.getDefaultCenterExitPath();
+        System.out.println("DEBUG - Using default diagonal: " + defaultDiag);
+        return defaultDiag;
     }
+
     
     private static char chooseDiag(Position ctx,
                                   List<Character> diags,
@@ -248,6 +355,13 @@ public class PathManager {
                     return c;  // 해당 지름길 사용
                 }
             }
+            
+            // ctx가 지름길 입구인지 확인
+            for (char c : diags) {
+                if (ctx == shape.getDiagPath(c).get(0)) {
+                    return c;
+                }
+            }
         }
     	
         if (isBackward) {
@@ -259,7 +373,6 @@ public class PathManager {
             // 앞으로 가는 경우 - 보드 형태별 기본 경로 사용
             return shape.getDefaultCenterExitPath();
         }
-        
     }
     
     private static int getDistanceToEnd(char diag, BoardShape shape) {

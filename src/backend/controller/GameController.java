@@ -200,34 +200,63 @@ public class GameController {
         }
     }
     
+    private Position inferDiagonalFromPos(Position pos) {
+    	System.out.println("DEBUG - Finding diagonal from context: " + pos);
+        switch (pos) {
+            case POS_5:
+                return Position.DIA_A2;
+            case POS_10:
+                return Position.DIA_B2;
+            case POS_15:
+                return Position.DIA_C2;
+            default:
+                return null;
+        }
+    }
+    
     private void updatePathContext(Piece piece, Position originalPos, List<Position> path) {
         // 경로가 비어있으면 아무것도 하지 않음
         if (path.isEmpty()) return;
         
         Position prevPos = originalPos;
+        System.out.println("DEBUG - Starting position: " + prevPos);
         
         for (Position currentPos : path) {
             // CENTER로 진입하는 경우
             if (currentPos == Position.CENTER) {
-                // 어느 지름길에서 왔는지 기록
+                // 이전 위치가 지름길인 경우 - 지름길의 컨텍스트 설정
                 if (prevPos.name().startsWith("DIA_")) {
                     piece.setPathContextWaypoint(prevPos);
                 }
+                // 외곽 경로에서 CENTER로 들어가는 경우
+                else if (prevPos != null && prevPos.name().startsWith("POS_")) {
+                    Position contextDiag = inferDiagonalFromPos(prevPos);
+                    if (contextDiag != null) {
+                        piece.setLastEnteredWaypoint(contextDiag);
+                    }
+                } else {
+                    piece.setPathContextWaypoint(Position.CENTER);
+                }
+                prevPos = currentPos;
             }
             // CENTER에서 나가는 경우
             else if (prevPos == Position.CENTER) {
-                // 어느 지름길로 나가는지 확인하고 컨텍스트 유지
+                // CENTER에서 지름길로 나가는 경우
                 if (currentPos.name().startsWith("DIA_")) {
                     char diagPath = currentPos.name().charAt(4); // DIA_X#에서 X 추출
-                    // 해당 지름길의 중간 지점 위치를 컨텍스트로 설정
-                    // (지름길 A의 경우 DIA_A2 등)
                     try {
+                        // 해당 지름길의 중간 지점 위치를 컨텍스트로 설정
                         Position contextPos = Position.valueOf("DIA_" + diagPath + "2");
                         piece.setPathContextWaypoint(contextPos);
                     } catch (IllegalArgumentException e) {
                         // 예상 포지션 이름이 없는 경우 CENTER를 컨텍스트로 설정
                         piece.setPathContextWaypoint(Position.CENTER);
                     }
+                } 
+                // POS_5 → DIA_A2 (예시로 POS_5에서 A2 지름길로 나가는 경우)
+                else if (currentPos.name().startsWith("POS_")) {
+                    Position contextDiag = piece.getLastEnteredWaypoint();
+                    piece.setPathContextWaypoint(contextDiag);
                 } else {
                     // CENTER에서 외곽 경로로 나가는 경우 CENTER를 컨텍스트로 저장
                     piece.setPathContextWaypoint(Position.CENTER);
