@@ -316,6 +316,49 @@ public class YutGameUI extends JFrame {
             setGameInteractionEnabled(false);
             actionPanel.setVisible(false);
             endTurnButton.setEnabled(false);
+            JDialog endDialog = new JDialog(this, "게임 종료", true);
+            // 메인 프레임과 같은 크기
+            endDialog.setSize(this.getSize());
+            endDialog.setLocationRelativeTo(this);
+            endDialog.setLayout(new BorderLayout(10,10));
+
+            // 4) 중앙에 안내 문구
+            JLabel msg = new JLabel(
+                    "<html><div style='text-align:center;'>"
+                            + winnerName + "님이 승리했습니다!<br>"
+                            + "새 게임을 시작하시겠습니까?</div></html>",
+                    SwingConstants.CENTER
+            );
+            endDialog.add(msg, BorderLayout.CENTER);
+
+            // 5) 하단에 버튼 패널
+            JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 10));
+            JButton newGameBtn = new JButton("새 게임 시작");
+            JButton exitBtn    = new JButton("프로그램 종료");
+            btnPanel.add(newGameBtn);
+            btnPanel.add(exitBtn);
+            endDialog.add(btnPanel, BorderLayout.SOUTH);
+
+            // 6) 버튼 리스너
+            newGameBtn.addActionListener(e -> {
+                endDialog.dispose();
+                // 로그와 인디케이터 초기화
+                logArea.setText("");
+                indicatorArea.setText("");
+                // 기존 보드 패널 초기화
+                remove(boardPanel);
+                boardPanel = new BoardPanel(null);
+                boardPanel.setBoardShape(selectedBoardShape);
+                add(boardPanel, BorderLayout.CENTER);
+                revalidate();
+                repaint();
+                // 다시 설정 입력 다이얼로그 호출
+                promptForGameSetup();
+            });
+            exitBtn.addActionListener(e -> System.exit(0));
+
+            // 7) 다이얼로그 보이기
+            endDialog.setVisible(true);
         });
     }
 

@@ -55,14 +55,12 @@ public class GameController {
         this.yutOrMoEffectFromLastThrow = false;
         // 턴이 바뀌면 현재 플레이어의 모든 말의 경로 문맥을 초기화하는 것이 안전할 수 있음.
         // 단, 이월되는 정보가 있다면 신중해야 함
-        // Player currentPlayer = game != null ? game.getCurrentPlayer() : null;
-        // if (currentPlayer != null) {
-        //     for (Piece p : currentPlayer.getPieces()) {
-        //         p.clearPathContext();
-        //     }
-        // }
         if (game != null && game.getCurrentPlayer() != null) {
-            game.getCurrentPlayer().getPieces().forEach(Piece::clearPathContext);
+            for (Piece p : game.getCurrentPlayer().getPieces()) {
+                if (p.getPosition() == Position.CENTER) {
+                    p.clearPathContext();
+                }
+            }
         }
     }
 
@@ -159,10 +157,7 @@ public class GameController {
         
         // 승리 조건 확인
         if (checkPlayerWin(game.getCurrentPlayer())) {
-            ui.logMessage(game.getCurrentPlayer().getName() + "님이 승리했습니다!");
-            ui.updateStatusLabel(game.getCurrentPlayer().getName() + "님이 승리했습니다!");
-            ui.enableThrowButtons(false);
-            ui.showActionPanel(false, null, null);
+            ui.showWinMessage(game.getCurrentPlayer().getName());
             return;
         }
 
@@ -195,6 +190,7 @@ public class GameController {
             prepareNewTurn();
             ui.logMessage(game.getCurrentPlayer().getName() + " 차례입니다.");
             ui.updateStatusLabel(game.getCurrentPlayer().getName() + " 차례입니다.");
+            ui.updateIndicators();
             ui.enableThrowButtons(true);
             ui.showActionPanel(false, null, null);
         }
@@ -213,14 +209,14 @@ public class GameController {
                 return null;
         }
     }
-    
+
     private void updatePathContext(Piece piece, Position originalPos, List<Position> path) {
         // 경로가 비어있으면 아무것도 하지 않음
         if (path.isEmpty()) return;
-        
+
         Position prevPos = originalPos;
         System.out.println("DEBUG - Starting position: " + prevPos);
-        
+
         for (Position currentPos : path) {
             // CENTER로 진입하는 경우
             if (currentPos == Position.CENTER) {
@@ -252,7 +248,7 @@ public class GameController {
                         // 예상 포지션 이름이 없는 경우 CENTER를 컨텍스트로 설정
                         piece.setPathContextWaypoint(Position.CENTER);
                     }
-                } 
+                }
                 // POS_5 → DIA_A2 (예시로 POS_5에서 A2 지름길로 나가는 경우)
                 else if (currentPos.name().startsWith("POS_")) {
                     Position contextDiag = piece.getLastEnteredWaypoint();
@@ -266,7 +262,7 @@ public class GameController {
             else if (prevPos.name().startsWith("DIA_") && currentPos.name().startsWith("DIA_")) {
                 char prevDiag = prevPos.name().charAt(4);
                 char currDiag = currentPos.name().charAt(4);
-                
+
                 // 같은 지름길 내 이동 - 컨텍스트 유지
                 if (prevDiag == currDiag) {
                     // 지름길 중간 지점을 컨텍스트로 설정
@@ -291,10 +287,10 @@ public class GameController {
                     piece.clearPathContext();
                 }
             }
-            
+
             prevPos = currentPos;
         }
-        
+
         // 목적지가 최종 종료(END)인 경우 컨텍스트 초기화
         if (path.get(path.size() - 1) == Position.END) {
             piece.clearPathContext();

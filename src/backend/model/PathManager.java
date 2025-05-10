@@ -24,7 +24,7 @@ public class PathManager {
         if (steps == 0) return path;
 
         if (cur == Position.OFFBOARD) {
-            if (steps < outer.size()) path.add(outer.get(steps));
+            if (steps < (outer.size()-1)) path.add(outer.get(steps));
             else path.add(Position.END);
             return path;
         }
@@ -37,9 +37,14 @@ public class PathManager {
                 return path;
             } else {
                 // 후진하는 경우 - outer path로 이동
-                int targetIdx = (outer.size() - (-steps) % outer.size()) % outer.size();
-                path.add(outer.get(targetIdx));
-                return path;
+                if (piece.getPathContextWaypoint() == null) {
+                    int targetIdx = ((outer.size()-1) - (-steps) % (outer.size()-1)) % (outer.size()-1);
+                    path.add(outer.get(targetIdx));
+                    return path;
+                } else {
+                    Position tempContextWayPoint = piece.getPathContextWaypoint();
+                    return backward(cur, -steps, ctx, fallbackCtx, outer, shape);
+                }
             }
         }
 
@@ -72,7 +77,7 @@ public class PathManager {
                     // 지름길 시작점을 넘어서 후진하는 경우
                     int entry = outer.indexOf(diag.get(0));
                     int off = -idx;
-                    int oidx = (entry - off % outer.size() + outer.size()) % outer.size();
+                    int oidx = (entry - off % (outer.size()-1) + (outer.size()-1)) % (outer.size()-1);
                     out.add(outer.get(oidx));
                 }
             } else {
@@ -87,11 +92,27 @@ public class PathManager {
                 } else {
                     int entry = outer.indexOf(defaultPath.get(0));
                     int off = -idx;
-                    int oidx = (entry - off % outer.size() + outer.size()) % outer.size();
+                    int oidx = (entry - off % (outer.size()-1) + (outer.size()-1)) % (outer.size()-1);
                     out.add(outer.get(oidx));
                 }
             }
             return out;
+        }
+
+        //원점에서 빽도 처리 할 경우 (도달 안해야 정상)
+        if (cur == Position.POS_0){
+            if(ctx != null){
+
+            }else{
+                int oIdx = outer.indexOf(cur);
+                if (oIdx != -1) {
+                    int tgt = (oIdx - steps % (outer.size()-1) + (outer.size()-1)) % (outer.size()-1);
+                    out.add(outer.get(tgt));
+                } else {
+                    out.add(cur);
+                }
+                return out;
+            }
         }
         
         // 2) diag 내부 후진
@@ -104,7 +125,7 @@ public class PathManager {
                 else {
                     int entry = outer.indexOf(diag.get(0));
                     int off   = -tgt;
-                    int oidx  = (entry - off % outer.size() + outer.size()) % outer.size();
+                    int oidx  = (entry - off % (outer.size()-1) + (outer.size()-1)) % (outer.size()-1);
                     out.add(outer.get(oidx));
                 }
                 return out;
@@ -113,7 +134,7 @@ public class PathManager {
         // 3) outer 후진
         int oidx = outer.indexOf(cur);
         if (oidx != -1) {
-            int tgt = (oidx - steps % outer.size() + outer.size()) % outer.size();
+            int tgt = (oidx - steps % (outer.size()-1) + (outer.size()-1)) % (outer.size()-1);
             out.add(outer.get(tgt));
         } else {
             out.add(cur);
@@ -139,15 +160,19 @@ public class PathManager {
         for (char c : shape.getDiagNames()) {
             List<Position> diag = shape.getDiagPath(c);
             if (diag.get(0) == cur) {
-                // 지름길 입구에서 CENTER까지의 이동 - 다음 이동을 위한 컨텍스트가 필요
-                // 따라서 여기에서 반환되는 위치에 대한 컨텍스트를 함께 설정해야 함
-                Position result = advanceWithPathCheck(diag, steps, outer, shape).get(0);
-                // 결과가 CENTER면 다음 후진을 위해 컨텍스트를 저장할 수 있도록 특별한 표시가 필요함
-                // 이 정보는 디버깅 출력일 뿐이며, 실제로는 별도의 메서드를 통해 Piece 객체에 저장해야 함
-                if (result == Position.CENTER) {
-                    System.out.println("DEBUG - CENTER reached from diagonal " + c + " - Set context to " + cur);
-                    // 컨텍스트 설정은 호출자가 처리해야 함
+                int centerIdx = diag.indexOf(Position.CENTER);
+                // PENTAGON 보드에서 CENTER를 넘어설 때는 A 지름길로 스위치
+                if (shape == BoardShape.PENTAGON && steps > centerIdx) {
+                    List<Position> diagA = shape.getDiagPath('A');
+                    // CENTER를 기준으로 넘어간 칸 수 계산
+                    int over    = steps - centerIdx;
+                    // A 지름길에서 CENTER 위치 인덱스 + over
+                    int idxA    = diagA.indexOf(Position.CENTER) + over;
+                    Position skipResult = advanceWithPathCheck(diagA, idxA, outer, shape).get(0);
+                    return List.of(skipResult);
                 }
+                // 그 외 일반 지름길 이동
+                Position result = advanceWithPathCheck(diag, steps, outer, shape).get(0);
                 return List.of(result);
             }
         }
@@ -189,7 +214,7 @@ public class PathManager {
             }
             
             // 지름길 입구를 지나쳐 가는 경우 - 일반 경로로 진행
-            if (dest < outer.size()) {
+            if (dest < (outer.size())) {
                 out.add(outer.get(dest));
             } else {
                 out.add(Position.END);
@@ -233,14 +258,14 @@ public class PathManager {
         // 3.1 지름길을 벗어나 지름길 입구에 정확히 도달하는 경우
         for (char c : shape.getDiagNames()) {
             int entry = outer.indexOf(shape.getDiagPath(c).get(0));
-            if (oidx % outer.size() == entry) {
+            if (oidx % (outer.size()-1) == entry) {
                 out.add(shape.getDiagPath(c).get(0));
                 return out;
             }
         }
         
         // 3.2 지름길을 벗어나 END에 도달하거나 그 이상 가는 경우
-        if (oidx >= outer.size()) {
+        if (oidx >= (outer.size()-1)) {
             out.add(Position.END);
         } else {
             // 3.3 일반 outer 경로 상의 위치
@@ -397,6 +422,6 @@ public class PathManager {
         // Calculate distance
         List<Position> outer = shape.getOuterPath();
         int idx = outer.indexOf(endpoint);
-        return outer.size() - idx;
+        return (outer.size()-1) - idx;
     }
 }

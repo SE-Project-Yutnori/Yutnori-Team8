@@ -22,10 +22,14 @@ public enum BoardShape {
 
     /** 외곽 경로: POS_0 ~ POS_{outerCount-1} */
     public List<Position> getOuterPath() {
-        return IntStream.range(0, outerCount)
-                .mapToObj(i -> Position.valueOf("POS_" + i))
-                .collect(Collectors.toList());
-    }
+        List<Position> path = IntStream.range(0, outerCount)
+               .mapToObj(i -> Position.valueOf("POS_" + i))
+               .collect(Collectors.toList());
+        
+        //마지막에 POS_0 추가
+        path.add(Position.valueOf("POS_0"));
+        return path;
+   }
 
     /**
     * 대각선 경로: [입구, DIA_x1, DIA_x2, CENTER, DIA_x3, DIA_x4, 출구]
