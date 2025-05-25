@@ -8,7 +8,7 @@ import backend.model.PathManager;
 import backend.model.Piece;
 import backend.model.Player;
 import backend.model.Position;
-import frontend.YutGameUI;
+import frontend.YutGameUIInterface;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,12 +27,12 @@ public class GameController {
 
     private Game game;
     private BoardShape selectedBoardShape;
-    private final YutGameUI ui;
+    private final YutGameUIInterface ui;
     private final List<YutThrowResult> currentTurnThrows = new ArrayList<>();
     private int pendingExtraTurns = 0;
     private boolean yutOrMoEffectFromLastThrow = false;
 
-    public GameController(YutGameUI ui, BoardShape shape) {
+    public GameController(YutGameUIInterface ui, BoardShape shape) {
         this.ui = ui;
         this.selectedBoardShape = shape; 
     }
@@ -120,7 +120,7 @@ public class GameController {
         else ui.logMessage("현재 사용할 수 있는 윷 결과가 없습니다.");
 
         ui.enableThrowButtons(canThrowFromYutMo || hasReservedTurns);
-        if (canThrowFromYutMo) ui.logMessage("방금 윷/모! 한 번 더 던지거나, 현재 윷으로 이동 가능.");
+        if (canThrowFromYutMo) ui.logMessage("방금 윷/모! 한 번 던지거나, 현재 윷으로 이동 가능.");
         if (hasReservedTurns) ui.logMessage("예약된 추가 던지기 " + this.pendingExtraTurns + "번 가능.");
 
         ui.showActionPanel(hasYutToApply, availableThrows, movablePieces);

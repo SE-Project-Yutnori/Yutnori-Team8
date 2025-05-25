@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Vector; // JComboBox 모델용
 import java.util.stream.Collectors;
 
-public class YutGameUI extends JFrame {
+public class YutGameUI extends JFrame implements YutGameUIInterface {
     private GameController controller;
     private Game gameModel;
 

@@ -82,7 +82,7 @@ public class PathManager {
                 }
             } else {
                 // 이런 경우는 없어야 하지만, 안전을 위한 예외 처리
-                char defaultDiag = chooseDiag(ctx, shape.getDiagNames(), true, shape);
+                char defaultDiag = chooseDiag(ctx, cur, shape.getDiagNames(), true, shape);
                 List<Position> defaultPath = shape.getDiagPath(defaultDiag);
                 centerIdx = defaultPath.indexOf(Position.CENTER);
                 int idx = centerIdx - steps;
@@ -150,7 +150,7 @@ public class PathManager {
         // 1) CENTER 앞으로
         if (cur == Position.CENTER) {
             // 모든 보드 형태에서는 도착점(END)으로 가는 최단 경로를 선택
-            char d = chooseDiag(ctx, shape.getDiagNames(), false, shape);
+            char d = chooseDiag(ctx, cur, shape.getDiagNames(), false, shape);
             List<Position> diag = shape.getDiagPath(d);
             int cIdx = diag.indexOf(Position.CENTER) + steps;
             return advanceWithPathCheck(diag, cIdx, outer, shape);
@@ -363,10 +363,15 @@ public class PathManager {
     }
 
     
-    private static char chooseDiag(Position ctx,
+    private static char chooseDiag(Position ctx, Position cur,
                                   List<Character> diags,
                                   boolean isBackward,
                                   BoardShape shape) {
+    	// Case 1: Center에서 바로 다음 이동이라면 기본 지름길 경로를 사용
+        if (ctx != null && cur == Position.CENTER) {
+            System.out.println("DEBUG - Current position is CENTER. Forcing default diagonal.");
+            return shape.getDefaultCenterExitPath();
+        }
         // 이전 경로 컨텍스트가 있으면 해당 경로 유지
         if (ctx != null) {
             // 직접적으로 지름길 위치에서 온 경우
