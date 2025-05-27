@@ -18,4 +18,5 @@ module yutnori {
 	opens backend.controller to javafx.graphics;
 	opens backend.game to javafx.graphics;
 	opens backend.model to javafx.graphics;
+	requires org.junit.jupiter.api;
 }
