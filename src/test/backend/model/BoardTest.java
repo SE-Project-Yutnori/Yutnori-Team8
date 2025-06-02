@@ -12,75 +12,98 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 
-public class BoardTest {
-    private Board board;
-    private Player player1;
-    private Player player2;
-    private Piece piece1;
-    private Piece piece2;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+import java.util.List;
 
+class BoardTest {
+    
+    private Board board;
+    private Player player1, player2;
+    private Piece piece1, piece2;
+    
     @BeforeEach
     void setUp() {
         board = new Board();
-        player1 = new Player("Player 1", 2); // 2개의 말을 가진 플레이어 생성
-        player2 = new Player("Player 2", 1);
-        piece1 = player1.getPieces().get(0);
-        piece2 = player1.getPieces().get(1); // 같은 플레이어의 두 번째 말 사용
+        player1 = new Player("Player 1", 4);
+        player2 = new Player("Player 2", 4);
+        piece1 = new Piece(player1);
+        piece2 = new Piece(player2);
     }
-
+    
     @Test
     void testInitialBoardState() {
-        // 모든 위치에 말이 없어야 함
+        // 모든 위치에 빈 리스트가 있어야 함
         for (Position pos : Position.values()) {
             if (pos != Position.OFFBOARD && pos != Position.END) {
                 assertTrue(board.getPiecesAt(pos).isEmpty());
             }
         }
+        assertTrue(board.getFinishedPieces().isEmpty());
     }
-
+    
     @Test
-    void testPlacePiece() {
-        // 말 배치
-        board.placePiece(piece1, Position.POS_0);
-        List<Piece> piecesAtPos0 = board.getPiecesAt(Position.POS_0);
-        assertEquals(1, piecesAtPos0.size());
-        assertEquals(piece1, piecesAtPos0.get(0));
-        assertEquals(Position.POS_0, piece1.getPosition());
+    void testGetPiecesAtSpecialPositions() {
+        // OFFBOARD와 END 위치에 대한 요청 시 빈 리스트 반환
+        assertTrue(board.getPiecesAt(Position.OFFBOARD).isEmpty());
+        assertTrue(board.getPiecesAt(Position.END).isEmpty());
     }
-
+    
     @Test
-    void testMultiplePiecesAtSamePosition() {
-        // 같은 플레이어의 말 두 개를 같은 위치에 배치
-        board.placePiece(piece1, Position.POS_0);
-        board.placePiece(piece2, Position.POS_0);
-
-        List<Piece> piecesAtPos0 = board.getPiecesAt(Position.POS_0);
-        assertEquals(2, piecesAtPos0.size());
-        assertTrue(piecesAtPos0.contains(piece1));
-        assertTrue(piecesAtPos0.contains(piece2));
-    }
-
-    @Test
-    void testCapturePiece() {
-        // 서로 다른 플레이어의 말로 잡기 테스트
-        Piece opponentPiece = player2.getPieces().get(0);
-        
-        board.placePiece(opponentPiece, Position.POS_0);
-        board.placePiece(piece1, Position.POS_1);
-
-        // piece1이 opponentPiece를 잡는 상황
+    void testPlacePieceNormalPosition() {
         boolean captured = board.placePiece(piece1, Position.POS_0);
-
-        assertTrue(captured);
-        assertEquals(Position.OFFBOARD, opponentPiece.getPosition());
+        assertFalse(captured);
         assertEquals(Position.POS_0, piece1.getPosition());
+        assertTrue(board.getPiecesAt(Position.POS_0).contains(piece1));
     }
-
+    
     @Test
-    void testFinishPiece() {
-        // 말이 끝에 도달하는 경우
-        board.placePiece(piece1, Position.END);
+    void testPlacePieceToEnd() {
+        boolean captured = board.placePiece(piece1, Position.END);
+        assertFalse(captured);
+        assertEquals(Position.END, piece1.getPosition());
         assertTrue(piece1.isFinished());
         assertTrue(board.getFinishedPieces().contains(piece1));
+    }
+    
+    @Test
+    void testCapturePiece() {
+        // piece2를 POS_5에 먼저 배치
+        board.placePiece(piece2, Position.POS_5);
+        assertEquals(Position.POS_5, piece2.getPosition());
+        
+        // piece1을 같은 위치에 배치하여 piece2를 잡기
+        boolean captured = board.placePiece(piece1, Position.POS_5);
+        assertTrue(captured);
+        
+        // piece1은 POS_5에 있고, piece2는 OFFBOARD로 이동
+        assertEquals(Position.POS_5, piece1.getPosition());
+        assertEquals(Position.OFFBOARD, piece2.getPosition());
+        assertTrue(board.getPiecesAt(Position.POS_5).contains(piece1));
+        assertFalse(board.getPiecesAt(Position.POS_5).contains(piece2));
+    }
+    
+    @Test
+    void testSamePlayerPiecesNotCaptured() {
+        Piece anotherPiece1 = new Piece(player1);
+        
+        // 같은 플레이어의 두 말을 같은 위치에 배치
+        board.placePiece(piece1, Position.POS_10);
+        boolean captured = board.placePiece(anotherPiece1, Position.POS_10);
+        
+        assertFalse(captured);
+        assertEquals(2, board.getPiecesAt(Position.POS_10).size());
+        assertTrue(board.getPiecesAt(Position.POS_10).contains(piece1));
+        assertTrue(board.getPiecesAt(Position.POS_10).contains(anotherPiece1));
+    }
+    
+    @Test
+    void testRemovePiece() {
+        board.placePiece(piece1, Position.POS_15);
+        assertTrue(board.getPiecesAt(Position.POS_15).contains(piece1));
+        
+        board.removePiece(piece1);
+        assertFalse(board.getPiecesAt(Position.POS_15).contains(piece1));
     }
 }

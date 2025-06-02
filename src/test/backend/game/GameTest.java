@@ -6,61 +6,61 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class GameTest {
+class GameTest {
+    
     private Game game;
-    private static final int PLAYER_COUNT = 2;
-    private static final int PIECE_COUNT = 4;
-
+    
     @BeforeEach
     void setUp() {
-        game = new Game(PLAYER_COUNT, PIECE_COUNT);
+        game = new Game(2, 4); // 2명, 각자 4개 말
     }
-
+    
     @Test
     void testGameInitialization() {
-        assertEquals(PLAYER_COUNT, game.getPlayers().size());
-        assertNotNull(game.getBoard());
-        assertEquals("Player 1", game.getCurrentPlayer().getName());
-    }
-
-    @Test
-    void testNextTurn() {
-        Player firstPlayer = game.getCurrentPlayer();
-        game.nextTurn();
-        Player secondPlayer = game.getCurrentPlayer();
+        assertNotNull(game.getPlayers());
+        assertEquals(2, game.getPlayers().size());
+        assertEquals("Player 1", game.getPlayers().get(0).getName());
+        assertEquals("Player 2", game.getPlayers().get(1).getName());
         
-        assertNotEquals(firstPlayer, secondPlayer);
-        assertEquals("Player 2", secondPlayer.getName());
-        
-        // 다시 첫 번째 플레이어로 돌아오는지 확인
-        game.nextTurn();
-        assertEquals(firstPlayer, game.getCurrentPlayer());
-    }
-
-    @Test
-    void testCheckWin() {
-        Player player = game.getCurrentPlayer();
-        
-        // 초기 상태에서는 승리하지 않음
-        assertFalse(game.checkWin(player));
-        
-        // 모든 말을 END 위치로 이동
-        for (Piece piece : player.getPieces()) {
-            piece.moveTo(Position.END);
-        }
-        
-        // 모든 말이 END에 도달했으므로 승리
-        assertTrue(game.checkWin(player));
-    }
-
-    @Test
-    void testPlayerPieces() {
+        // 각 플레이어가 4개씩 말을 가지고 있는지 확인
         for (Player player : game.getPlayers()) {
-            assertEquals(PIECE_COUNT, player.getPieces().size());
+            assertEquals(4, player.getPieces().size());
+            // 모든 말이 OFFBOARD에서 시작하는지 확인
             for (Piece piece : player.getPieces()) {
                 assertEquals(Position.OFFBOARD, piece.getPosition());
                 assertFalse(piece.isFinished());
             }
         }
+    }
+    
+    @Test
+    void testCurrentPlayer() {
+        assertEquals("Player 1", game.getCurrentPlayer().getName());
+    }
+    
+    @Test
+    void testNextTurn() {
+        assertEquals("Player 1", game.getCurrentPlayer().getName());
+        game.nextTurn();
+        assertEquals("Player 2", game.getCurrentPlayer().getName());
+        game.nextTurn();
+        assertEquals("Player 1", game.getCurrentPlayer().getName());
+    }
+    
+    @Test
+    void testCheckWin() {
+        Player player1 = game.getCurrentPlayer();
+        assertFalse(game.checkWin(player1));
+        
+        // 모든 말을 END로 보내서 승리 조건 테스트
+        for (Piece piece : player1.getPieces()) {
+            piece.moveTo(Position.END);
+        }
+        assertTrue(game.checkWin(player1));
+    }
+    
+    @Test
+    void testBoardInitialization() {
+        assertNotNull(game.getBoard());
     }
 }
