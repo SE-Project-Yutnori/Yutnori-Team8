@@ -1,7 +1,6 @@
 package test.backend.model;
 
 import org.junit.jupiter.api.Test;
-
 import backend.model.Position;
 
 import static org.junit.jupiter.api.Assertions.*;

@@ -4,7 +4,6 @@ import backend.game.*;
 import backend.model.*;
 import backend.controller.GameController;
 import test.backend.controller.TestUI;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import static org.junit.jupiter.api.Assertions.*;

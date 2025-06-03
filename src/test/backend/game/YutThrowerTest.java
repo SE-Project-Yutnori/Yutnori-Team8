@@ -1,7 +1,6 @@
 package test.backend.game;
 
 import org.junit.jupiter.api.Test;
-
 import backend.game.YutThrowResult;
 import backend.game.YutThrower;
 

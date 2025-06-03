@@ -11,8 +11,6 @@ import backend.model.BoardShape;
 
 import javax.swing.*;
 import java.awt.*;
-// import java.awt.event.ActionEvent; // 현재 직접 사용 안함
-// import java.awt.event.ActionListener; // 현재 직접 사용 안함
 import java.util.ArrayList;
 import java.util.Arrays; // promptForDesignatedThrow에서 사용
 import java.util.List;
@@ -25,8 +23,7 @@ public class YutGameUI extends JFrame implements YutGameUIInterface {
 
     private JLabel statusLabel;
     private JTextArea logArea, indicatorArea;
-    private BoardPanel boardPanel;
-
+    private SwingBoardPanel boardPanel;
     private JButton randomThrowButton, designatedThrowButton;
     private JComboBox<String> yutResultChoiceDropdown;
     private JComboBox<String> pieceChoiceDropdown;
@@ -53,8 +50,9 @@ public class YutGameUI extends JFrame implements YutGameUIInterface {
         statusLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
         add(statusLabel, BorderLayout.NORTH);
 
-        boardPanel = new BoardPanel(null); // 초기에는 null 보드
-        add(boardPanel, BorderLayout.CENTER);
+        boardPanel = new SwingBoardPanel(null); // 초기에는 null 보드
+        add(boardPanel.getPanel(), BorderLayout.CENTER);
+        boardPanel.getPanel().setVisible(true);  // 명시적으로 가시성 설정
 
         indicatorArea = new JTextArea(10, 15); // 너비 조정
         indicatorArea.setEditable(false);
@@ -168,16 +166,23 @@ public class YutGameUI extends JFrame implements YutGameUIInterface {
 
     public void setGameModel(Game gameModel) {
     	this.gameModel = gameModel;
-        remove(boardPanel);
-        boardPanel = new BoardPanel(gameModel != null ? gameModel.getBoard() : null);
+        if (boardPanel != null && boardPanel.getPanel() != null) {
+            remove(boardPanel.getPanel());
+        }
+        boardPanel = new SwingBoardPanel(gameModel != null ? gameModel.getBoard() : null);
         boardPanel.setBoardShape(selectedBoardShape);
-        add(boardPanel, BorderLayout.CENTER);
+        add(boardPanel.getPanel(), BorderLayout.CENTER);
+        boardPanel.getPanel().setVisible(true);  // 명시적으로 가시성 설정
         revalidate(); repaint();
     }
     
     private void setMainUIVisible(boolean visible) {
-        statusLabel.setVisible(visible);
-        boardPanel.setVisible(visible);
+        if (statusLabel != null) {
+            statusLabel.setVisible(visible);
+        }
+        if (boardPanel != null && boardPanel.getPanel() != null) {
+            boardPanel.getPanel().setVisible(visible);
+        }
     }
 
     public void promptForGameSetup() {
@@ -185,10 +190,14 @@ public class YutGameUI extends JFrame implements YutGameUIInterface {
         promptForBoardShape();
         int players = promptForInt("참가자 수(2~4):", 2, 4);
         int pieces  = promptForInt("말 수(2~5):", 2, 5);
-        if (players < 0 || pieces < 0) System.exit(0);
+        if (players < 0 || pieces < 0) {
+            System.exit(0);
+            return;
+        }
         controller = new GameController(this, selectedBoardShape);
         controller.initializeGame(players, pieces);
         setGameInteractionEnabled(true);
+        setMainUIVisible(true);  // UI 요소들의 가시성 설정
     }
     
     private void promptForBoardShape() {
@@ -266,13 +275,13 @@ public class YutGameUI extends JFrame implements YutGameUIInterface {
 
     public void refreshBoard() {
         if (SwingUtilities.isEventDispatchThread()) {
-            if (boardPanel != null) {
-                boardPanel.repaint();
+            if (boardPanel != null && boardPanel.getPanel() != null) {
+                boardPanel.getPanel().repaint();
             }
         } else {
             SwingUtilities.invokeLater(() -> {
-                if (boardPanel != null) {
-                    boardPanel.repaint();
+                if (boardPanel != null && boardPanel.getPanel() != null) {
+                    boardPanel.getPanel().repaint();
                 }
             });
         }
@@ -316,13 +325,12 @@ public class YutGameUI extends JFrame implements YutGameUIInterface {
             setGameInteractionEnabled(false);
             actionPanel.setVisible(false);
             endTurnButton.setEnabled(false);
+            
             JDialog endDialog = new JDialog(this, "게임 종료", true);
-            // 메인 프레임과 같은 크기
             endDialog.setSize(this.getSize());
             endDialog.setLocationRelativeTo(this);
             endDialog.setLayout(new BorderLayout(10,10));
 
-            // 4) 중앙에 안내 문구
             JLabel msg = new JLabel(
                     "<html><div style='text-align:center;'>"
                             + winnerName + "님이 승리했습니다!<br>"
@@ -331,33 +339,30 @@ public class YutGameUI extends JFrame implements YutGameUIInterface {
             );
             endDialog.add(msg, BorderLayout.CENTER);
 
-            // 5) 하단에 버튼 패널
             JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 10));
             JButton newGameBtn = new JButton("새 게임 시작");
-            JButton exitBtn    = new JButton("프로그램 종료");
+            JButton exitBtn = new JButton("프로그램 종료");
             btnPanel.add(newGameBtn);
             btnPanel.add(exitBtn);
             endDialog.add(btnPanel, BorderLayout.SOUTH);
 
-            // 6) 버튼 리스너
             newGameBtn.addActionListener(e -> {
                 endDialog.dispose();
-                // 로그와 인디케이터 초기화
                 logArea.setText("");
                 indicatorArea.setText("");
-                // 기존 보드 패널 초기화
-                remove(boardPanel);
-                boardPanel = new BoardPanel(null);
+                if (boardPanel != null && boardPanel.getPanel() != null) {
+                    remove(boardPanel.getPanel());
+                }
+                boardPanel = new SwingBoardPanel(null);
                 boardPanel.setBoardShape(selectedBoardShape);
-                add(boardPanel, BorderLayout.CENTER);
+                add(boardPanel.getPanel(), BorderLayout.CENTER);
+                boardPanel.getPanel().setVisible(true);  // 명시적으로 가시성 설정
                 revalidate();
                 repaint();
-                // 다시 설정 입력 다이얼로그 호출
                 promptForGameSetup();
             });
             exitBtn.addActionListener(e -> System.exit(0));
 
-            // 7) 다이얼로그 보이기
             endDialog.setVisible(true);
         });
     }

@@ -61,7 +61,7 @@ public class YutGameJavaFXUI extends Application implements YutGameUIInterface {
         
         // 중앙 보드 패널
         boardPanel = new JavaFXBoardPanel(null);
-        mainLayout.setCenter(boardPanel);
+        mainLayout.setCenter(boardPanel.getPane());
         
         // 왼쪽 인디케이터 영역
         indicatorArea = new TextArea();
@@ -151,7 +151,7 @@ public class YutGameJavaFXUI extends Application implements YutGameUIInterface {
         this.gameModel = gameModel;
         boardPanel = new JavaFXBoardPanel(gameModel != null ? gameModel.getBoard() : null);
         boardPanel.setBoardShape(selectedBoardShape);
-        mainLayout.setCenter(boardPanel);
+        mainLayout.setCenter(boardPanel.getPane());
     }
 
     @Override
@@ -227,7 +227,7 @@ public class YutGameJavaFXUI extends Application implements YutGameUIInterface {
     public void refreshBoard() {
         Platform.runLater(() -> {
             if (boardPanel != null) {
-                boardPanel.drawBoard();
+                boardPanel.refresh();
             }
         });
     }

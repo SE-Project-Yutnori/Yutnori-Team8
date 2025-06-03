@@ -1,7 +1,6 @@
 package test.backend.model;
 
 import org.junit.jupiter.api.Test;
-
 import backend.model.Piece;
 import backend.model.Player;
 import backend.model.Position;
